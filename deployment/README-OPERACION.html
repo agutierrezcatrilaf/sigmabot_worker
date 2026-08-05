@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SigmabotSync - Instructivo de Despliegue y Operacion</title>
+  <style>
+    :root {
+      --primary: #0f4c81;
+      --text: #1a1a1a;
+      --muted: #5a5a5a;
+      --border: #d9d9d9;
+      --bg-soft: #f6f8fb;
+    }
+    @page {
+      size: A4;
+      margin: 2cm 1.8cm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+      font-size: 11.5pt;
+      line-height: 1.5;
+    }
+    .cover {
+      border: 1px solid var(--border);
+      padding: 30px 34px;
+      background: linear-gradient(to bottom, #ffffff 0%, #fbfdff 100%);
+      margin-bottom: 22px;
+    }
+    .cover h1 {
+      margin: 0;
+      color: var(--primary);
+      font-size: 30px;
+      letter-spacing: 0.4px;
+    }
+    .cover h2 {
+      margin: 8px 0 20px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #2f2f2f;
+    }
+    .meta {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .meta td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    .meta td:first-child {
+      width: 35%;
+      background: var(--bg-soft);
+      font-weight: 600;
+    }
+    h3 {
+      margin: 22px 0 8px;
+      color: var(--primary);
+      font-size: 15px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+    }
+    p { margin: 8px 0; }
+    ul, ol { margin: 6px 0 8px 20px; }
+    li { margin: 4px 0; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #f2f4f8;
+      border: 1px solid #e6e8ee;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-size: 10.5pt;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 12px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg-soft);
+      font-weight: 600;
+    }
+    .note {
+      background: #f7fbff;
+      border: 1px solid #cfe3f5;
+      border-left: 4px solid var(--primary);
+      padding: 10px 12px;
+      margin: 8px 0 10px;
+    }
+    .tree {
+      white-space: pre;
+      font-family: Consolas, "Courier New", monospace;
+      background: #fbfbfb;
+      border: 1px solid var(--border);
+      padding: 12px;
+      font-size: 10.5pt;
+    }
+    .small { color: var(--muted); font-size: 10pt; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>SigmabotSync</h1>
+    <h2>Instructivo de Despliegue y Operacion</h2>
+    <table class="meta">
+      <tr><td>Proyecto</td><td>SigmabotSync</td></tr>
+      <tr><td>Documento</td><td>Guia de despliegue para equipo receptor</td></tr>
+      <tr><td>Version de entrega</td><td>1.0.0</td></tr>
+      <tr><td>Fecha</td><td>2026-05-07</td></tr>
+      <tr><td>Responsable de entrega</td><td>______________________</td></tr>
+    </table>
+  </section>
+
+  <h3>Control de cambios</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Version</th>
+        <th>Fecha</th>
+        <th>Descripcion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1.0.0</td>
+        <td>2026-05-07</td>
+        <td>Version inicial para entrega formal.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>1) Objetivo</h3>
+  <p>Este documento describe como desplegar <code>SigmabotSync</code> en servidores Windows, programar su ejecucion cada una hora mediante el Programador de tareas y validar su funcionamiento inicial.</p>
+
+  <h3>2) Artefactos a entregar</h3>
+  <p>Entregar una carpeta de release que incluya:</p>
+  <ul>
+    <li><code>SigmabotSync.Console.exe</code></li>
+    <li><code>SigmabotSync.Console.dll</code></li>
+    <li>Todas las DLL dependientes necesarias para la ejecucion</li>
+    <li><code>settings.json</code> configurado para el ambiente destino</li>
+    <li>Scripts operativos:
+      <ul>
+        <li><code>run-sigmabot.bat</code></li>
+        <li><code>install-task.bat</code></li>
+        <li><code>uninstall-task.bat</code></li>
+      </ul>
+    </li>
+  </ul>
+  <div class="note"><strong>Recomendacion:</strong> entregar siempre la carpeta completa de ejecutables y librerias (no solo el <code>.exe</code>).</div>
+
+  <h3>3) Requisitos en servidor</h3>
+  <ul>
+    <li>Windows Server con permisos para crear tareas programadas.</li>
+    <li>Usuario de servicio con permisos de lectura/escritura sobre carpeta de despliegue y logs.</li>
+    <li>Acceso a SQL Server para las bases requeridas por el proceso.</li>
+    <li>Conectividad hacia Aconex.</li>
+    <li>Archivo <code>settings.json</code> con <code>DatabaseConnectionString</code> valido.</li>
+  </ul>
+
+  <h3>Requisitos de red y acceso</h3>
+  <ul>
+    <li>Permitir salida HTTPS hacia Aconex (puerto <code>443</code>) desde el servidor.</li>
+    <li>Verificar acceso a SQL Server en el puerto configurado (habitualmente <code>1433</code>).</li>
+    <li>Asegurar permisos de lectura/escritura en la ruta de descarga definida en <code>BasePath</code> (si aplica al trabajo).</li>
+    <li>Confirmar que la cuenta que ejecuta la tarea (<code>SYSTEM</code> o <code>SERVICE_ACCOUNT</code>) tenga permisos sobre carpetas locales, rutas compartidas y base de datos segun la configuracion.</li>
+    <li>Asegurar que, desde el contexto donde se ejecuta <code>SigmabotSync.Console.exe</code>, exista permiso de lectura y escritura sobre el <code>BasePath</code> definido para guardar archivos fisicos.</li>
+  </ul>
+
+  <h3>4) Comportamiento operativo del ejecutable</h3>
+  <p>Al ejecutarse, <code>SigmabotSync.Console.exe</code>:</p>
+  <ol>
+    <li>Lee <code>settings.json</code>.</li>
+    <li>Consulta trabajos pendientes segun la configuracion en base de datos.</li>
+    <li>Ejecuta los trabajos activos configurados.</li>
+    <li>Evita duplicar corridas cuando detecta ejecuciones en curso.</li>
+    <li>Registra trazas y resultados de ejecucion.</li>
+  </ol>
+  <p>En terminos operativos: cada corrida revisa que trabajos corresponde ejecutar y procesa los pendientes.</p>
+
+  <h3>5) Validacion post-despliegue</h3>
+  <ol>
+    <li>Ejecutar manualmente una vez: <code>SigmabotSync.Console.exe</code>.</li>
+    <li>Verificar:
+      <ul>
+        <li>El proceso inicia y finaliza sin error critico.</li>
+        <li>Se generan logs del proceso.</li>
+        <li>Se registran estados/resultados en tablas de control de ejecucion.</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h3>6) Programacion de tarea cada 1 hora</h3>
+  <p>La tarea se instala mediante <code>install-task.bat</code>. Este script:</p>
+  <ul>
+    <li>Crea carpeta de logs si no existe.</li>
+    <li>Elimina la tarea anterior (si existe).</li>
+    <li>Crea la tarea recurrente cada 1 hora.</li>
+  </ul>
+  <p>Antes de ejecutarlo, ajustar las variables de ambiente del script.</p>
+
+  <h3>Parametros editables en <code>install-task.bat</code></h3>
+  <ul>
+    <li><code>TASK_NAME</code>: nombre de la tarea en el Programador de tareas.</li>
+    <li><code>APP_DIR</code>: carpeta donde quedo desplegado el ejecutable.</li>
+    <li><code>RUN_BAT</code>: ruta del script <code>run-sigmabot.bat</code>.</li>
+    <li><code>START_TIME</code>: hora de inicio de la primera corrida (formato <code>HH:mm</code>).</li>
+    <li><code>RUN_MODE</code>: modo de ejecucion de la tarea:
+      <ul>
+        <li><code>SYSTEM</code>: usa cuenta del sistema local (no requiere usuario/password).</li>
+        <li><code>SERVICE_ACCOUNT</code>: usa una cuenta de servicio.</li>
+      </ul>
+    </li>
+    <li><code>RUN_AS</code>: usuario de servicio (solo si <code>RUN_MODE=SERVICE_ACCOUNT</code>).</li>
+    <li><code>RUN_PWD</code>: password de la cuenta de servicio (solo si <code>RUN_MODE=SERVICE_ACCOUNT</code>).</li>
+  </ul>
+
+  <h3>Recomendacion de seguridad</h3>
+  <ul>
+    <li>No almacenar credenciales reales en repositorios.</li>
+    <li>Completar <code>RUN_PWD</code> solo en el servidor destino y con acceso restringido.</li>
+  </ul>
+
+  <h3>Ubicacion de logs</h3>
+  <ul>
+    <li>Log principal del aplicativo (definido en el codigo): <code>%APP_DIR%\Logs\SigmabotSync_yyyy-MM-dd.log</code>.</li>
+    <li>Log de tarea programada (opcional, definido en <code>run-sigmabot.bat</code>): <code>%APP_DIR%\logs\task-run.log</code>.</li>
+    <li><code>APP_DIR</code> se define en los scripts de despliegue. Ejemplo habitual: <code>C:\Sigmabot\SigmabotSync</code>.</li>
+  </ul>
+
+</body>
+</html>

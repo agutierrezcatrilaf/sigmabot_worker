@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SigmabotSync.Application</RootNamespace>
+    <AssemblyName>SigmabotSync.Application</AssemblyName>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Obsoleto/WebRequest: migrar a HttpClient cuando se refactorice; código inalcanzable por diseño en WorkflowExtractionWorker -->
+    <NoWarn>$(NoWarn);CS0618;SYSLIB0014;CS0162;CS0219</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SigmabotSync.Domain\SigmabotSync.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

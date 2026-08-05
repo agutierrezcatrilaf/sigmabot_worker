@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SigmabotSync.Console</RootNamespace>
+    <AssemblyName>SigmabotSync.Console</AssemblyName>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SigmabotSync.Application\SigmabotSync.Application.csproj" />
+    <ProjectReference Include="..\SigmabotSync.Domain\SigmabotSync.Domain.csproj" />
+    <ProjectReference Include="..\SigmabotSync.Infrastructure.Config\SigmabotSync.Infrastructure.Config.csproj" />
+    <ProjectReference Include="..\SigmabotSync.Infrastructure\SigmabotSync.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

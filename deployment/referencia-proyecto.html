@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SigmaBot — Referencia del proyecto</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --text: #1a1d23;
+      --muted: #5c6570;
+      --border: #dde1e6;
+      --accent: #0f62fe;
+      --accent-soft: #edf5ff;
+      --success: #198038;
+      --success-soft: #defbe6;
+      --warning: #b28600;
+      --warning-soft: #fff8e1;
+      --danger: #da1e28;
+      --danger-soft: #fff1f1;
+      --purple: #6929c4;
+      --orange: #ba4e00;
+      --radius: 8px;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+      --mono: Consolas, "Courier New", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px 16px 48px;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; }
+
+    header { margin-bottom: 24px; }
+    header h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 4px; }
+    header p { color: var(--muted); font-size: 0.9rem; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .stat .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat .value { font-size: 1.25rem; font-weight: 600; margin-top: 2px; }
+    .stat.info .value { color: var(--accent); }
+
+    .callout {
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      border-left: 4px solid;
+    }
+
+    .callout strong { display: block; margin-bottom: 6px; }
+    .callout p, .callout ul { font-size: 0.9rem; }
+    .callout ul { margin-left: 18px; margin-top: 6px; }
+    .callout.info { background: var(--accent-soft); border-color: var(--accent); }
+    .callout.danger { background: var(--danger-soft); border-color: var(--danger); }
+
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 28px 0 14px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 16px 0 8px; color: var(--muted); }
+
+    details {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+
+    details[open] { margin-bottom: 14px; }
+
+    summary {
+      cursor: pointer;
+      padding: 14px 16px;
+      font-weight: 600;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      user-select: none;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    summary::before {
+      content: "▸";
+      color: var(--muted);
+      font-size: 0.85rem;
+      transition: transform 0.15s;
+    }
+
+    details[open] summary::before { transform: rotate(90deg); }
+
+    .badge {
+      margin-left: auto;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .badge.neutral { background: var(--bg); color: var(--muted); }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .dot.blue { background: var(--accent); }
+    .dot.green { background: var(--success); }
+    .dot.orange { background: var(--orange); }
+    .dot.purple { background: var(--purple); }
+
+    .details-body { padding: 0 16px 16px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin-top: 8px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--bg);
+      font-weight: 600;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tbody tr:nth-child(even) { background: #fafbfc; }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.82em;
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .card-header strong { display: block; font-size: 0.95rem; }
+    .card-header span { font-size: 0.8rem; color: var(--muted); }
+
+    .card-body { padding: 14px 16px; font-size: 0.875rem; }
+    .card-body p + p { margin-top: 6px; }
+    .card-body ul { margin-left: 18px; margin-top: 6px; }
+    .card-body li + li { margin-top: 4px; }
+
+    .arch-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      white-space: pre;
+    }
+
+    footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    @media print {
+      body { background: white; padding: 0; }
+      details { break-inside: avoid; }
+      summary::before { display: none; }
+      details[open] summary { border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>SigmaBot — Referencia del proyecto</h1>
+      <p>Arquitectura, componentes, despliegue y operación · SigmabotSync + SigmabotConfig</p>
+    </header>
+
+    <div class="stats">
+      <div class="stat info"><div class="label">Front</div><div class="value">Angular 19</div></div>
+      <div class="stat info"><div class="label">API + Consola</div><div class="value">.NET 8</div></div>
+      <div class="stat"><div class="label">Repos</div><div class="value">2</div></div>
+      <div class="stat"><div class="label">Patrón</div><div class="value">Hexagonal</div></div>
+    </div>
+
+    <div class="callout info">
+      <strong>Arquitectura general</strong>
+      <p>
+        <strong>SigmabotConfig</strong> (Angular) consume <strong>SigmabotConfig.Api</strong> (.NET 8), que lee/escribe SQL Server.
+        <strong>SigmabotSync.Console</strong> corre en paralelo contra la misma BD, ejecuta trabajos programados y
+        se comunica con Aconex (HTTPS) y shares SMB (lectura de archivos).
+      </p>
+    </div>
+
+    <div class="arch-diagram">SigmabotConfig (Angular 19)  →  SigmabotConfig.Api (.NET 8)  →  SQL Server
+                                        ↑
+SigmabotSync.Console (.NET 8)  ─────────┘ (misma BD)
+        ↓
+   Aconex API (HTTPS) + shares SMB (lectura de archivos)</div>
+
+    <h2>Repositorios</h2>
+    <table>
+      <thead><tr><th>Repositorio</th><th>Contenido</th></tr></thead>
+      <tbody>
+        <tr><td><code>SigmabotSync</code></td><td>Consola batch, API, dominio, aplicación, infraestructura, scripts y despliegue</td></tr>
+        <tr><td><code>SigmabotConfig</code></td><td>Front Angular del configurador (repo hermano de SigmabotSync)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Componentes</h2>
+
+    <details open>
+      <summary><span class="dot blue"></span> SigmabotConfig — Front Angular <span class="badge">Angular 19.2</span></summary>
+      <div class="details-body">
+        <table>
+          <thead><tr><th>Propiedad</th><th>Valor</th></tr></thead>
+          <tbody>
+            <tr><td>Repositorio</td><td>SigmabotConfig (repo separado, hermano de SigmabotSync)</td></tr>
+            <tr><td>Lenguaje</td><td>TypeScript 5.7</td></tr>
+            <tr><td>Framework</td><td>Angular 19.2 standalone</td></tr>
+            <tr><td>UI</td><td>Angular Material 19.2 + CDK</td></tr>
+            <tr><td>Estado / HTTP</td><td>RxJS 7.8</td></tr>
+            <tr><td>Node requerido</td><td>20 LTS o superior</td></tr>
+            <tr><td>Puerto dev</td><td><code>http://localhost:4200</code></td></tr>
+            <tr><td>Config runtime</td><td><code>src/assets/config.json</code> → <code>apiBaseUrl</code></td></tr>
+            <tr><td>Autenticación</td><td>SSO vía Autorizador (login, /callback, guard, interceptor)</td></tr>
+            <tr><td>Build prod</td><td><code>ng build</code> → <code>dist/sigmabot-config/browser</code></td></tr>
+          </tbody>
+        </table>
+        <h3>Rutas principales</h3>
+        <table>
+          <thead><tr><th>Ruta</th><th>Función</th></tr></thead>
+          <tbody>
+            <tr><td><code>/estado</code></td><td>Estado de conexión BD</td></tr>
+            <tr><td><code>/credenciales</code></td><td>CRUD credenciales Aconex y BD</td></tr>
+            <tr><td><code>/trabajos</code></td><td>CRUD trabajos</td></tr>
+            <tr><td><code>/parametros</code></td><td>Parámetros dinámicos por tipo de trabajo</td></tr>
+            <tr><td><code>/programacion</code></td><td>Programación día/hora/activo</td></tr>
+            <tr><td><code>/login</code></td><td>Inicio de sesión SSO</td></tr>
+            <tr><td><code>/callback</code></td><td>Retorno OAuth</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="dot green"></span> SigmabotConfig.Api — API REST <span class="badge">ASP.NET Core 8</span></summary>
+      <div class="details-body">
+        <table>
+          <thead><tr><th>Propiedad</th><th>Valor</th></tr></thead>
+          <tbody>
+            <tr><td>Repositorio</td><td>SigmabotSync/SigmabotConfig.Api</td></tr>
+            <tr><td>Tipo</td><td>ASP.NET Core Web API</td></tr>
+            <tr><td>Target framework</td><td>net8.0</td></tr>
+            <tr><td>Swagger</td><td>Swashbuckle 6.9.0</td></tr>
+            <tr><td>Puerto dev</td><td><code>http://localhost:5154</code></td></tr>
+            <tr><td>BD</td><td>SQL Server — ConnectionString en appsettings (no en el front)</td></tr>
+            <tr><td>CORS</td><td>localhost:4200, configsigmabotqa.salfagestion.cl, configsigmabot.salfagestion.cl</td></tr>
+            <tr><td>Auth</td><td>Autorizador — validarRecursoToken (recurso: sigmabotconfig-api)</td></tr>
+            <tr><td>Flag SSO</td><td><code>Autorizador:Enabled</code> (false en local por defecto)</td></tr>
+            <tr><td>Dependencias</td><td>SigmabotSync.Domain + Infrastructure (mismo dominio que consola)</td></tr>
+          </tbody>
+        </table>
+        <h3>Endpoints principales</h3>
+        <table>
+          <thead><tr><th>Método</th><th>Ruta</th><th>Descripción</th></tr></thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/system/status</code></td><td>Estado BD (sin exponer cadena)</td></tr>
+            <tr><td>CRUD</td><td><code>/api/credenciales</code></td><td>Credenciales Aconex y BD</td></tr>
+            <tr><td>CRUD</td><td><code>/api/trabajos</code></td><td>Definición de trabajos</td></tr>
+            <tr><td>GET/PUT</td><td><code>/api/trabajos/{id}/parametros</code></td><td>Parámetros por tipo</td></tr>
+            <tr><td>CRUD</td><td><code>/api/trabajos/{id}/programacion</code></td><td>Programación</td></tr>
+            <tr><td>GET</td><td><code>/api/catalogos/*</code></td><td>Tipos, estados, combos</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="dot orange"></span> SigmabotSync.Console — Batch / Tarea programada <span class="badge neutral">Sin SSO</span></summary>
+      <div class="details-body">
+        <table>
+          <thead><tr><th>Propiedad</th><th>Valor</th></tr></thead>
+          <tbody>
+            <tr><td>Repositorio</td><td>SigmabotSync/SigmabotSync.Console</td></tr>
+            <tr><td>Tipo</td><td>Console app .NET 8</td></tr>
+            <tr><td>Ejecución</td><td>Tarea Programada Windows (cada 1 h) vía <code>install-task.bat</code></td></tr>
+            <tr><td>Cuenta default</td><td>SYSTEM (LocalSystem)</td></tr>
+            <tr><td>Cuenta recomendada UNC</td><td>SERVICE_ACCOUNT — cuenta de dominio con permisos en share</td></tr>
+            <tr><td>Config local</td><td><code>settings.json</code> → DatabaseConnectionString</td></tr>
+            <tr><td>Config funcional</td><td>SQL Server — trabajos, credenciales, programación</td></tr>
+            <tr><td>Logs</td><td><code>%APP_DIR%\Logs\SigmabotSync_yyyy-MM-dd.log</code></td></tr>
+            <tr><td>Salida red</td><td>HTTPS 443 → us1.aconex.com</td></tr>
+            <tr><td>Aconex auth</td><td>HTTP Basic + header X-Application-Key (desde tabla Credenciales)</td></tr>
+          </tbody>
+        </table>
+        <h3>Tipos de trabajo que ejecuta</h3>
+        <table>
+          <thead><tr><th>Worker</th><th>Descripción</th></tr></thead>
+          <tbody>
+            <tr><td>DocumentExtractionWorker</td><td>Extracción de documentos desde Aconex</td></tr>
+            <tr><td>IncidentExtractionWorker</td><td>Extracción de incidentes</td></tr>
+            <tr><td>MailExtractionWorker</td><td>Extracción de correos</td></tr>
+            <tr><td>WorkflowExtractionWorker</td><td>Extracción de workflows</td></tr>
+            <tr><td>DocumentSyncWorker</td><td>Sincronización entre proyectos Aconex</td></tr>
+            <tr><td>FileExtractionWorker</td><td>Descarga de archivos a share/local</td></tr>
+            <tr><td>FileUploadWithMetadataWorker</td><td>Sube archivos desde BD + share al register de Aconex</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="dot purple"></span> Capas backend compartidas <span class="badge neutral">3 capas</span></summary>
+      <div class="details-body">
+        <h3>SigmabotSync.Domain</h3>
+        <table>
+          <tbody>
+            <tr><td>Rol</td><td>Núcleo hexagonal — entidades, puertos, validadores</td></tr>
+            <tr><td>Entidades</td><td>Credencial, Trabajo, TrabajoConfiguracion, TrabajoProgramacion, TrabajoEjecucion, Project</td></tr>
+            <tr><td>Puertos</td><td>IAconexHttpGetPort, IAconexRegisterSearchPort, IAconexRegisterWritePort, etc.</td></tr>
+          </tbody>
+        </table>
+        <h3>SigmabotSync.Application</h3>
+        <table>
+          <tbody>
+            <tr><td>Rol</td><td>Casos de uso — workers y servicios</td></tr>
+            <tr><td>Carpetas</td><td>Synchronization/, Extraction/, FileExtraction/, Services/, Common/</td></tr>
+          </tbody>
+        </table>
+        <h3>SigmabotSync.Infrastructure</h3>
+        <table>
+          <tbody>
+            <tr><td>Rol</td><td>Adaptadores — HTTP Aconex, SQL Server, settings</td></tr>
+            <tr><td>HTTP</td><td>AconexClientBase, adaptadores register/search/write</td></tr>
+            <tr><td>BD</td><td>CredencialesService, TrabajosService, TrabajosProgramacionService</td></tr>
+            <tr><td>SqlClient</td><td>Microsoft.Data.SqlClient 5.2.3</td></tr>
+            <tr><td>JSON</td><td>Newtonsoft.Json 13.0.4</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <h2>Despliegue</h2>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <strong>Proceso de build</strong>
+          <span>Scripts del repositorio</span>
+        </div>
+        <div class="card-body">
+          <ul>
+            <li>Configurador: <code>Scripts/Build-ConfiguradorRelease.ps1</code></li>
+            <li>Salida API + front: <code>publish/configurador/api</code> y <code>web</code></li>
+            <li>Consola: <code>dotnet publish</code> + <code>install-task.bat</code></li>
+            <li>Restore reproducible: <code>dotnet restore --locked-mode</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <strong>Ambientes</strong>
+          <span>QA y Producción</span>
+        </div>
+        <div class="card-body">
+          <p><strong>QA</strong> — QAAPP06 (172.20.1.102)</p>
+          <p>URL: configsigmabotqa.salfagestion.cl</p>
+          <p>IIS: E:\inetpub\wwwroot\configsigmabot</p>
+          <p style="margin-top:10px"><strong>Producción</strong> — PRAPP06 (172.20.1.199)</p>
+          <p>URL: configsigmabot.salfagestion.cl</p>
+          <p>IIS: E:\inetpub\wwwroot\configsigmabot</p>
+        </div>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Componente</th><th>Despliegue</th><th>Requisitos servidor</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Consola</td>
+          <td><code>dotnet publish</code> → copiar carpeta → <code>settings.json</code> → <code>install-task.bat</code></td>
+          <td>.NET 8 Runtime, SQL Server, salida HTTPS Aconex</td>
+        </tr>
+        <tr>
+          <td>API</td>
+          <td>Build-ConfiguradorRelease.ps1 → publish/api → run-api.bat o IIS</td>
+          <td>.NET 8 Runtime + Hosting Bundle, SQL Server, puerto 5154</td>
+        </tr>
+        <tr>
+          <td>Front</td>
+          <td>Mismo script → publish/web → IIS sitio estático</td>
+          <td>IIS, web.config, config.json con apiBaseUrl</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Acceso a archivos y carga a Aconex</h2>
+
+    <div class="callout danger">
+      <strong>Consideración operativa</strong>
+      <p>
+        La consola <strong>no</strong> hace <code>net use</code> ni impersonación. Lee <code>PathFisico</code> con la identidad
+        de la Tarea Programada. Para rutas UNC de dominio, configurar <strong>SERVICE_ACCOUNT</strong> en lugar de SYSTEM.
+      </p>
+    </div>
+
+    <table>
+      <thead><tr><th>Tema</th><th>Detalle</th></tr></thead>
+      <tbody>
+        <tr><td>Flujo</td><td>FileUploadWithMetadataWorker: DocumentosMetadata + DocumentosPath → lee archivo → sube a Aconex Register</td></tr>
+        <tr><td>Columna clave</td><td><code>DocumentosPath.PathFisico</code> (ruta UNC o local)</td></tr>
+        <tr><td>Share de referencia</td><td><code>\\172.20.1.89\planos_aconex</code></td></tr>
+        <tr><td>Permisos requeridos</td><td>Lectura SMB + lectura NTFS en carpetas/archivos</td></tr>
+        <tr><td>Credenciales Aconex</td><td>Tabla Credenciales en SQL Server</td></tr>
+        <tr><td>Herramienta de diagnóstico</td><td>SigmabotSync.Tools.NetShareSmokeTest</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Dependencias y estándares</h2>
+    <table>
+      <thead><tr><th>Área</th><th>Detalle</th></tr></thead>
+      <tbody>
+        <tr><td>Backend</td><td>.NET 8, packages.lock.json por proyecto, restore con <code>--locked-mode</code></td></tr>
+        <tr><td>Front</td><td>Angular 19, Angular Material, TypeScript 5.7</td></tr>
+        <tr><td>Base de datos</td><td>SQL Server — credenciales, trabajos, metadata y paths de archivos</td></tr>
+        <tr><td>Integración externa</td><td>Aconex API (us1.aconex.com), Autorizador SSO en front y API</td></tr>
+        <tr><td>Documentación operativa</td><td><code>deployment/README-OPERACION.md</code>, <code>deployment/configurador/LEEME-SERVIDOR.md</code></td></tr>
+      </tbody>
+    </table>
+
+    <footer>
+      SigmabotSync · Arquitectura hexagonal · Configuración centralizada en SQL Server
+    </footer>
+  </div>
+</body>
+</html>

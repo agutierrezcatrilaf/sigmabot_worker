@@ -1,0 +1,34 @@
+## Ignore Visual Studio cache and system files
+.vs/
+*.user
+*.suo
+
+## Ignore build outputs
+bin/
+obj/
+
+## Ignore packages
+packages/
+*.nupkg
+
+## Ignore logs
+*.log
+
+## Ignore user-specific files
+*.userprefs
+
+## Ignore publish artifacts (puede incluir appsettings.Production.json con credenciales)
+artifacts/
+publish/
+*.pubxml
+*.publishproj
+
+## Ignore backup files
+*_backup*/
+
+## Config API: cadena de conexión local (usar appsettings.Development.json.example)
+SigmabotConfig.Api/appsettings.Development.json
+
+## Consola: connection string local (usar settings.json.example)
+SigmabotSync.Console/settings.json
+settings.json
