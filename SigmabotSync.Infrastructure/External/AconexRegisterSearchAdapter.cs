@@ -62,7 +62,8 @@ namespace SigmabotSync.Infrastructure.External
                 ["userId"] = userId,
                 ["returnFields"] = returnFields?.ToList() ?? new List<string>(),
                 ["resultSize"] = resultSize.ToString(CultureInfo.InvariantCulture),
-                ["showDocHistory"] = filterByDocNo ? "false" : "true",
+                // false = solo versión vigente (current); true = historial completo de revisiones.
+                ["showDocHistory"] = "false",
                 ["pageNumber"] = pageNumber.ToString(CultureInfo.InvariantCulture)
             };
             if (filterByDocNo)
