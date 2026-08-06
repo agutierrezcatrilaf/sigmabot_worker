@@ -1135,8 +1135,8 @@ namespace SigmabotSync.Application.Synchronization
                 $"  Register destino: docno={documentNo.Trim()}, returnFields ({returnFields.Count}): " +
                 string.Join(", ", returnFields));
 
-            var searchResult = await SearchTargetRegisterRobustForLookupAsync(
-                request, targetProject.ProjectId, documentNo.Trim(), revision, returnFields, cancellationToken).ConfigureAwait(false);
+            var searchResult = await SearchTargetRegisterAsync(
+                request, targetProject.ProjectId, documentNo.Trim(), returnFields, cancellationToken, filterRevision: null).ConfigureAwait(false);
 
             if (searchResult != null && (!searchResult.IsHttpSuccess || searchResult.HasAconexError))
             {
@@ -1158,7 +1158,7 @@ namespace SigmabotSync.Application.Synchronization
             if (page.searchResults.Count > 1)
                 log?.Invoke(
                     $"  Register destino: {page.searchResults.Count} resultado(s) docno={documentNo.Trim()} " +
-                    "(se selecciona versión vigente / revisión según transmittal).");
+                    "(se selecciona versión vigente).");
 
             Searchresult match = SelectTargetRegisterSearchMatch(page.searchResults, documentNo, revision);
             if (match == null || match.Id <= 0)
@@ -1319,15 +1319,6 @@ namespace SigmabotSync.Application.Synchronization
         {
             string escaped = EscapeLuceneQuoted(codelcoBridgeKey.Trim());
             return $"{CodelcoBridgeField}:\"{escaped}\"";
-        }
-
-        private static string BuildDocumentSearchQuery(string documentNo, string revision)
-        {
-            string doc = EscapeLuceneQuoted(documentNo.Trim());
-            if (IsWildcardRevision(revision))
-                return $"docno:\"{doc}\"";
-            string rev = EscapeLuceneQuoted(NormalizeRevision(revision));
-            return $"docno:\"{doc}\" AND revision:\"{rev}\"";
         }
 
         private static bool IsWildcardRevision(string revision)
@@ -1868,47 +1859,6 @@ namespace SigmabotSync.Application.Synchronization
                 cancellationToken,
                 filterDocumentNo: documentNo,
                 filterRevision: filterRevision);
-        }
-
-        /// <summary>
-        /// register/search por docno (vuelta Codelco): homologado con bridge ida —
-        /// primero docno sin revisión + <c>showDocHistory</c> false (versión vigente);
-        /// si falla, reintentos por revisión concreta.
-        /// </summary>
-        private async Task<AconexRegisterSearchResult> SearchTargetRegisterRobustForLookupAsync(
-            TransmittalSyncRunRequest request,
-            string targetProjectId,
-            string documentNo,
-            string preferredRevision,
-            IReadOnlyList<string> returnFields,
-            CancellationToken cancellationToken)
-        {
-            var vigente = await SearchTargetRegisterAsync(
-                request, targetProjectId, documentNo, returnFields, cancellationToken, filterRevision: null).ConfigureAwait(false);
-            if (vigente?.IsHttpSuccess == true && vigente.Page?.searchResults != null && vigente.Page.searchResults.Count > 0)
-                return vigente;
-
-            var revisionsToTry = new List<string>();
-            if (!string.IsNullOrWhiteSpace(preferredRevision) && !IsWildcardRevision(preferredRevision))
-                revisionsToTry.Add(NormalizeRevision(preferredRevision));
-
-            foreach (string candidate in new[] { "-", "A", "B", "C", "D", "E", "F" })
-            {
-                if (!revisionsToTry.Exists(r => string.Equals(r, candidate, StringComparison.OrdinalIgnoreCase)))
-                    revisionsToTry.Add(candidate);
-            }
-
-            AconexRegisterSearchResult last = vigente;
-            foreach (string revisionFilter in revisionsToTry)
-            {
-                var result = await SearchTargetRegisterAsync(
-                    request, targetProjectId, documentNo, returnFields, cancellationToken, revisionFilter).ConfigureAwait(false);
-                last = result;
-                if (result?.IsHttpSuccess == true && result.Page?.searchResults != null && result.Page.searchResults.Count > 0)
-                    return result;
-            }
-
-            return last;
         }
 
         private static bool ResponseIndicatesFieldValueAlreadyExists(string responseText)
