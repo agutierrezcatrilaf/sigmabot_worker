@@ -1155,6 +1155,11 @@ namespace SigmabotSync.Application.Synchronization
                 return null;
             }
 
+            if (page.searchResults.Count > 1)
+                log?.Invoke(
+                    $"  Register destino: {page.searchResults.Count} resultado(s) docno={documentNo.Trim()} " +
+                    "(se selecciona versión vigente / revisión según transmittal).");
+
             Searchresult match = SelectTargetRegisterSearchMatch(page.searchResults, documentNo, revision);
             if (match == null || match.Id <= 0)
             {
@@ -1866,7 +1871,9 @@ namespace SigmabotSync.Application.Synchronization
         }
 
         /// <summary>
-        /// register/search por docno: Aconex falla sin filtro de revisión; se prueba la pedida y luego "-" / A / B.
+        /// register/search por docno (vuelta Codelco): homologado con bridge ida —
+        /// primero docno sin revisión + <c>showDocHistory</c> false (versión vigente);
+        /// si falla, reintentos por revisión concreta.
         /// </summary>
         private async Task<AconexRegisterSearchResult> SearchTargetRegisterRobustForLookupAsync(
             TransmittalSyncRunRequest request,
@@ -1876,17 +1883,22 @@ namespace SigmabotSync.Application.Synchronization
             IReadOnlyList<string> returnFields,
             CancellationToken cancellationToken)
         {
+            var vigente = await SearchTargetRegisterAsync(
+                request, targetProjectId, documentNo, returnFields, cancellationToken, filterRevision: null).ConfigureAwait(false);
+            if (vigente?.IsHttpSuccess == true && vigente.Page?.searchResults != null && vigente.Page.searchResults.Count > 0)
+                return vigente;
+
             var revisionsToTry = new List<string>();
             if (!string.IsNullOrWhiteSpace(preferredRevision) && !IsWildcardRevision(preferredRevision))
                 revisionsToTry.Add(NormalizeRevision(preferredRevision));
 
-            foreach (string candidate in new[] { "-", "A", "B" })
+            foreach (string candidate in new[] { "-", "A", "B", "C", "D", "E", "F" })
             {
                 if (!revisionsToTry.Exists(r => string.Equals(r, candidate, StringComparison.OrdinalIgnoreCase)))
                     revisionsToTry.Add(candidate);
             }
 
-            AconexRegisterSearchResult last = null;
+            AconexRegisterSearchResult last = vigente;
             foreach (string revisionFilter in revisionsToTry)
             {
                 var result = await SearchTargetRegisterAsync(
