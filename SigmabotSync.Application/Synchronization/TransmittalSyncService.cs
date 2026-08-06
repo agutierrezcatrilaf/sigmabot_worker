@@ -155,7 +155,7 @@ namespace SigmabotSync.Application.Synchronization
                 }
                 else
                 {
-                    log?.Invoke("  AVISO: sin filas en TransmittalSyncCampoProyecto; se usará GET register/schema (modo legacy).");
+                    log?.Invoke("  AVISO: sin filas en TransmittalSyncCampoDestino; se usará GET register/schema (modo legacy).");
                     targetSchema = await LoadTargetRegisterSchemaAsync(request, targetProject, cancellationToken).ConfigureAwait(false);
                     log?.Invoke($"Schema registro destino ({targetProject.Label}): {targetSchema.Fields?.Count ?? 0} campos.");
                 }
@@ -1172,12 +1172,13 @@ namespace SigmabotSync.Application.Synchronization
             string codelcoBridgeKey,
             string revision,
             Action<string> log,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyList<string> returnFields = null)
         {
             if (string.IsNullOrWhiteSpace(codelcoBridgeKey))
                 return null;
 
-            IReadOnlyList<string> returnFields = BuildTargetRegisterBridgeSearchReturnFields();
+            returnFields ??= BuildTargetRegisterBridgeSearchReturnFields();
             string searchQuery = BuildCodelcoBridgeSearchQuery(codelcoBridgeKey);
             log?.Invoke(
                 $"  Register destino: búsqueda {CodelcoBridgeField}={codelcoBridgeKey.Trim()}, query={searchQuery}");
@@ -1436,8 +1437,8 @@ namespace SigmabotSync.Application.Synchronization
                     }
 
                     IReadOnlyDictionary<string, string> fetchedTargetHints = await FetchTargetRegisterHintsAsync(
-                        request, targetProject, targetSchema, fieldMappings, targetDocumentId, supersedeDocNo, revision, log,
-                        cancellationToken).ConfigureAwait(false);
+                        request, sourceProject, targetProject, targetSchema, fieldMappings, attachment, sourceHints,
+                        targetDocumentId, supersedeDocNo, revision, log, cancellationToken).ConfigureAwait(false);
                     foreach (var kv in fetchedTargetHints)
                     {
                         if (!string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
@@ -1720,50 +1721,66 @@ namespace SigmabotSync.Application.Synchronization
         }
 
         /// <summary>
-        /// Lee el documento existente en destino (register/search) con todos los returnFields del supersede
-        /// (schema mandatory + homologación destino + CamposConsultaRegistroDestino).
+        /// Lee el documento existente en destino para supersede: ida Codelco→SALFA por
+        /// <see cref="CodelcoBridgeField"/>; vuelta SALFA→Codelco por docno con el valor de ese campo en origen.
         /// </summary>
         private async Task<IReadOnlyDictionary<string, string>> FetchTargetRegisterHintsAsync(
             TransmittalSyncRunRequest request,
+            ProyectoSyncItem sourceProject,
             ProyectoSyncItem targetProject,
             AconexRegisterSchemaSnapshot targetSchema,
             IReadOnlyList<TransmittalSyncCampoMapeoItem> fieldMappings,
+            TransmittalDocumentAttachment attachment,
+            IReadOnlyDictionary<string, string> sourceHints,
             string documentId,
             string documentNo,
             string revision,
             Action<string> log,
             CancellationToken cancellationToken)
         {
-            IReadOnlyList<string> configuredExtra = ResolveConfiguredExtraFieldsForTargetSupersedeSearch(
-                request, targetProject);
             IReadOnlyList<string> returnFields = BuildTargetRegisterSearchReturnFields(
-                targetSchema, configuredExtra, fieldMappings);
+                targetSchema, configuredExtraFields: null, fieldMappings);
 
             TargetDocumentLookup lookup = null;
-            if (!string.IsNullOrWhiteSpace(documentId))
+            if (!IsLado2Source(request, sourceProject))
             {
-                lookup = await LookupTargetDocumentByDocumentIdInRegisterAsync(
-                    request, targetProject, documentId.Trim(), returnFields, log, cancellationToken).ConfigureAwait(false);
+                string codelcoBridgeKey = attachment?.DocumentNo?.Trim();
+                if (!string.IsNullOrWhiteSpace(codelcoBridgeKey))
+                {
+                    log?.Invoke(
+                        $"  Register destino supersede (ida): búsqueda {CodelcoBridgeField}={codelcoBridgeKey}");
+                    lookup = await LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
+                        request, targetProject, targetSchema, codelcoBridgeKey, revision, log, cancellationToken,
+                        returnFields).ConfigureAwait(false);
+                }
             }
-
-            if (lookup == null && !string.IsNullOrWhiteSpace(documentNo))
+            else
             {
-                lookup = await LookupTargetDocumentInRegisterAsync(
-                    request, targetProject, targetSchema, documentNo.Trim(), revision, log, cancellationToken,
-                    returnFields).ConfigureAwait(false);
+                string codelcoDocNo = GetHintValue(sourceHints, CodelcoBridgeField);
+                if (!string.IsNullOrWhiteSpace(codelcoDocNo))
+                {
+                    log?.Invoke(
+                        $"  Register destino supersede (vuelta): docno={codelcoDocNo.Trim()} " +
+                        $"(desde {CodelcoBridgeField} origen SALFA)");
+                    lookup = await LookupTargetDocumentInRegisterAsync(
+                        request, targetProject, targetSchema, codelcoDocNo.Trim(), revision, log, cancellationToken,
+                        returnFields).ConfigureAwait(false);
+                }
             }
 
             if (lookup?.RegisterHints == null || lookup.RegisterHints.Count == 0)
             {
-                log?.Invoke(
-                    "  Register destino supersede: sin hints (documentid=" + (documentId ?? "?") +
-                    ", docno=" + (documentNo ?? "?") + ").");
+                string searchKey = !IsLado2Source(request, sourceProject)
+                    ? $"{CodelcoBridgeField}={attachment?.DocumentNo?.Trim() ?? "?"}"
+                    : $"docno={GetHintValue(sourceHints, CodelcoBridgeField) ?? "?"} ({CodelcoBridgeField} SALFA)";
+                log?.Invoke($"  Register destino supersede: sin hints ({searchKey}).");
                 return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             }
 
+            string destDocNo = GetHintValue(lookup.RegisterHints, "DocumentNumber") ?? documentNo;
             log?.Invoke(
                 $"  Register destino supersede: {lookup.RegisterHints.Count} campo(s) leídos " +
-                $"(documentid={lookup.DocumentId ?? documentId ?? "?"}, docno={documentNo ?? "?"}).");
+                $"(documentid={lookup.DocumentId ?? documentId ?? "?"}, docno destino={destDocNo ?? "?"}).");
             return lookup.RegisterHints;
         }
 
@@ -1907,24 +1924,6 @@ namespace SigmabotSync.Application.Synchronization
                 throwIfNotSuccess: false,
                 cancellationToken,
                 searchQuery: searchQuery);
-        }
-
-        /// <summary>Codelco vs SALFA: listas distintas de returnFields extra (no mezclar project fields).</summary>
-        private static IReadOnlyList<string> ResolveConfiguredExtraFieldsForTargetSupersedeSearch(
-            TransmittalSyncRunRequest request,
-            ProyectoSyncItem targetProject)
-        {
-            if (request == null || targetProject == null)
-                return null;
-
-            string targetId = targetProject.ProjectId?.Trim();
-            string salfaId = request.IdProyecto2?.Trim();
-            if (!string.IsNullOrWhiteSpace(targetId)
-                && !string.IsNullOrWhiteSpace(salfaId)
-                && string.Equals(targetId, salfaId, StringComparison.OrdinalIgnoreCase))
-                return request.CamposConsultaRegistroDestinoSalfa;
-
-            return request.CamposConsultaRegistroDestino;
         }
 
         private static IReadOnlyList<string> BuildTargetRegisterExistenceSearchReturnFields()
@@ -2148,6 +2147,10 @@ namespace SigmabotSync.Application.Synchronization
                 foreach (TransmittalSyncCampoMapeoItem map in fieldMappings)
                 {
                     if (map == null)
+                        continue;
+                    if (ProjectSyncCampoOrigenTokens.IsSyntheticToken(map.CampoOrigen))
+                        continue;
+                    if (string.IsNullOrWhiteSpace(map.CampoOrigen))
                         continue;
                     string apiField = ToRegisterSearchApiField(map.CampoOrigen, map.CampoDestino);
                     if (!string.IsNullOrWhiteSpace(apiField))
