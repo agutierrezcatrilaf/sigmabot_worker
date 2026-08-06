@@ -1,8 +1,9 @@
 @echo off
 setlocal EnableExtensions
 REM Publica SigmabotSync.Console en publish\console\
+REM Repo: SigmabotSync.Worker (GitHub sigmabot_worker)
 
-set "REPO_ROOT=%~dp0.."
+for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
 set "OUT=%REPO_ROOT%\publish\console"
 
 echo.
@@ -23,6 +24,10 @@ if exist "%REPO_ROOT%\deployment\run-sigmabot.bat" (
   copy /Y "%REPO_ROOT%\deployment\run-sigmabot.bat" "%OUT%\deployment\" >nul
   copy /Y "%REPO_ROOT%\deployment\install-task.bat" "%OUT%\deployment\" >nul
   copy /Y "%REPO_ROOT%\deployment\uninstall-task.bat" "%OUT%\deployment\" >nul
+)
+
+if exist "%REPO_ROOT%\SigmabotSync.Console\settings.json.example" (
+  copy /Y "%REPO_ROOT%\SigmabotSync.Console\settings.json.example" "%OUT%\settings.json.example" >nul
 )
 
 powershell -NoProfile -Command "Compress-Archive -Path '%OUT%\*' -DestinationPath '%REPO_ROOT%\publish\SigmabotSync.Console-Release.zip' -Force"

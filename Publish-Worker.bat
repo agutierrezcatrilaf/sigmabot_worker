@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-REM Publica la consola (worker). Doble clic en la raiz del repo.
+REM Publica la consola (worker). Repo: SigmabotSync.Worker (GitHub sigmabot_worker).
 
 set "REPO=%~dp0"
 set "PUBLISH_NOPAUSE=1"

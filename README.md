@@ -21,17 +21,19 @@ dotnet build SigmabotSync.Worker.sln -c Release
 
 ## Publish
 
-```bash
-Scripts\Publish-Console.bat
-```
-
-o desde la raíz:
+**Desde la raíz del repo** (recomendado):
 
 ```bash
 Publish-Worker.bat
 ```
 
-Salida: `publish\console\` (+ ZIP).
+o:
+
+```bash
+Scripts\Publish-Console.bat
+```
+
+Salida: `publish\console\` y ZIP `publish\SigmabotSync.Console-Release.zip` (incluye `settings.json.example` y scripts `deployment\`).
 
 ## Despliegue
 
