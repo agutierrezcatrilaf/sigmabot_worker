@@ -1,8 +1,7 @@
 -- Estado de ProjectSync cross-project.
 -- TransmittalSyncProcesados: mails ya leídos del proyecto ORIGEN (ACXProjectId = origen).
 -- TransmittalSyncMapeo: DocumentNo+Revision → DocumentId en el proyecto DESTINO (ACXProjectId = destino).
--- TransmittalSyncCampoProyecto: mapeo por par origen→destino (IdTrabajo + ambos ACXProjectId).
--- Campo = tag XML destino; CampoOrigen = nombre en origen; Catalogo = tabla paramétrica (NULL = passthrough).
+-- Matriz de campos: TransmittalSyncCampoDestino (ver CreateTable_TransmittalSyncCampoDestino.sql).
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TransmittalSyncProcesados')
 BEGIN
@@ -74,27 +73,3 @@ BEGIN
 END
 ELSE
     PRINT 'La tabla TransmittalSyncDocumentProcesados ya existe.';
-
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TransmittalSyncCampoProyecto')
-BEGIN
-    CREATE TABLE [dbo].[TransmittalSyncCampoProyecto] (
-        Id               INT             IDENTITY(1,1) NOT NULL PRIMARY KEY,
-        IdTrabajo            INT             NOT NULL,
-        ACXProjectIdOrigen   NVARCHAR(50)    NOT NULL,
-        ACXProjectIdDestino  NVARCHAR(50)    NOT NULL,
-        Campo                NVARCHAR(100)   NOT NULL,
-        CampoOrigen          NVARCHAR(100)   NULL,
-        EsObligatorio        BIT             NOT NULL CONSTRAINT DF_TransmittalSyncCampoProyecto_Oblig DEFAULT (0),
-        ValorDefault         NVARCHAR(500)   NULL,
-        Catalogo             NVARCHAR(100)   NULL,
-        Orden                INT             NOT NULL CONSTRAINT DF_TransmittalSyncCampoProyecto_Orden DEFAULT (0),
-        UpdatedAt            DATETIME2       NOT NULL CONSTRAINT DF_TransmittalSyncCampoProyecto_UpdatedAt DEFAULT (SYSUTCDATETIME())
-    );
-
-    CREATE UNIQUE INDEX UX_TransmittalSyncCampoProyecto_Trabajo_Par_Campo
-        ON [dbo].[TransmittalSyncCampoProyecto] (IdTrabajo, ACXProjectIdOrigen, ACXProjectIdDestino, Campo);
-
-    PRINT 'Tabla TransmittalSyncCampoProyecto creada.';
-END
-ELSE
-    PRINT 'La tabla TransmittalSyncCampoProyecto ya existe.';

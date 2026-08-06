@@ -1,5 +1,4 @@
 -- Matriz ProjectSync centrada en proyecto destino (create + supersede read).
--- TransmittalSyncCampoProyecto queda intacta (legacy / rollback en main).
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TransmittalSyncCampoDestino')
 BEGIN

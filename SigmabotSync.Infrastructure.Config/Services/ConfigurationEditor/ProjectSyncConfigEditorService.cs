@@ -4,16 +4,18 @@ using Microsoft.Data.SqlClient;
 
 namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
 {
-    public sealed class ProjectSyncCampoProyectoFila
+    public sealed class ProjectSyncCampoDestinoFila
     {
         public string AcxProjectIdOrigen { get; set; }
         public string AcxProjectIdDestino { get; set; }
-        public string Campo { get; set; }
-        public string CampoOrigen { get; set; }
+        public string CampoDestino { get; set; }
+        public string TipoFuente { get; set; }
+        public string FuenteValor { get; set; }
         public bool EsObligatorio { get; set; }
         public string ValorDefault { get; set; }
         public string Catalogo { get; set; }
         public int Orden { get; set; }
+        public bool Activo { get; set; } = true;
     }
 
     public sealed class ProjectSyncEquivalenciaFila
@@ -27,7 +29,7 @@ namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
         public bool Activo { get; set; } = true;
     }
 
-    /// <summary>Editor de homologacion ProjectSync para el configurador.</summary>
+    /// <summary>Editor de matriz destino y equivalencias ProjectSync para el configurador.</summary>
     public sealed class ProjectSyncConfigEditorService
     {
         private readonly string _connectionString;
@@ -37,21 +39,21 @@ namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         }
 
-        public IReadOnlyList<ProjectSyncCampoProyectoFila> ListarCampos(
+        public IReadOnlyList<ProjectSyncCampoDestinoFila> ListarCamposDestino(
             int idTrabajo,
             string origen,
             string destino)
         {
             const string sql = @"
-                SELECT ACXProjectIdOrigen, ACXProjectIdDestino, Campo, CampoOrigen,
-                       EsObligatorio, ValorDefault, Catalogo, Orden
-                FROM TransmittalSyncCampoProyecto
+                SELECT ACXProjectIdOrigen, ACXProjectIdDestino, CampoDestino, TipoFuente, FuenteValor,
+                       EsObligatorio, ValorDefault, Catalogo, Orden, Activo
+                FROM TransmittalSyncCampoDestino
                 WHERE IdTrabajo = @IdTrabajo
                   AND ACXProjectIdOrigen = @Origen
                   AND ACXProjectIdDestino = @Destino
-                ORDER BY Orden, Campo";
+                ORDER BY Orden, CampoDestino";
 
-            var list = new List<ProjectSyncCampoProyectoFila>();
+            var list = new List<ProjectSyncCampoDestinoFila>();
             using (var cn = new SqlConnection(_connectionString))
             {
                 cn.Open();
@@ -64,16 +66,18 @@ namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
                     {
                         while (reader.Read())
                         {
-                            list.Add(new ProjectSyncCampoProyectoFila
+                            list.Add(new ProjectSyncCampoDestinoFila
                             {
                                 AcxProjectIdOrigen = ReadString(reader, 0),
                                 AcxProjectIdDestino = ReadString(reader, 1),
-                                Campo = ReadString(reader, 2),
-                                CampoOrigen = ReadString(reader, 3),
-                                EsObligatorio = !reader.IsDBNull(4) && Convert.ToBoolean(reader.GetValue(4)),
-                                ValorDefault = ReadString(reader, 5),
-                                Catalogo = ReadString(reader, 6),
-                                Orden = reader.IsDBNull(7) ? 0 : Convert.ToInt32(reader.GetValue(7))
+                                CampoDestino = ReadString(reader, 2),
+                                TipoFuente = ReadString(reader, 3),
+                                FuenteValor = ReadString(reader, 4),
+                                EsObligatorio = !reader.IsDBNull(5) && Convert.ToBoolean(reader.GetValue(5)),
+                                ValorDefault = ReadString(reader, 6),
+                                Catalogo = ReadString(reader, 7),
+                                Orden = reader.IsDBNull(8) ? 0 : Convert.ToInt32(reader.GetValue(8)),
+                                Activo = reader.IsDBNull(9) || Convert.ToBoolean(reader.GetValue(9))
                             });
                         }
                     }
@@ -127,11 +131,11 @@ namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
             return list;
         }
 
-        public void ReemplazarCampos(
+        public void ReemplazarCamposDestino(
             int idTrabajo,
             string origen,
             string destino,
-            IReadOnlyList<ProjectSyncCampoProyectoFila> filas)
+            IReadOnlyList<ProjectSyncCampoDestinoFila> filas)
         {
             using (var cn = new SqlConnection(_connectionString))
             {
@@ -139,7 +143,7 @@ namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
                 using (var tx = cn.BeginTransaction())
                 {
                     using (var del = new SqlCommand(@"
-                        DELETE FROM TransmittalSyncCampoProyecto
+                        DELETE FROM TransmittalSyncCampoDestino
                         WHERE IdTrabajo = @IdTrabajo
                           AND ACXProjectIdOrigen = @Origen
                           AND ACXProjectIdDestino = @Destino", cn, tx))
@@ -154,24 +158,28 @@ namespace SigmabotSync.Infrastructure.Services.ConfigurationEditor
                     {
                         foreach (var fila in filas)
                         {
-                            if (fila == null || string.IsNullOrWhiteSpace(fila.Campo))
+                            if (fila == null || string.IsNullOrWhiteSpace(fila.CampoDestino))
+                                continue;
+                            if (string.IsNullOrWhiteSpace(fila.TipoFuente))
                                 continue;
 
                             using (var ins = new SqlCommand(@"
-                                INSERT INTO TransmittalSyncCampoProyecto
-                                    (IdTrabajo, ACXProjectIdOrigen, ACXProjectIdDestino, Campo, CampoOrigen,
-                                     EsObligatorio, ValorDefault, Catalogo, Orden)
+                                INSERT INTO TransmittalSyncCampoDestino
+                                    (IdTrabajo, ACXProjectIdOrigen, ACXProjectIdDestino, CampoDestino, TipoFuente,
+                                     FuenteValor, EsObligatorio, ValorDefault, Catalogo, Orden, Activo)
                                 VALUES
-                                    (@IdTrabajo, @Origen, @Destino, @Campo, @CampoOrigen,
-                                     @EsObligatorio, @ValorDefault, @Catalogo, @Orden)", cn, tx))
+                                    (@IdTrabajo, @Origen, @Destino, @CampoDestino, @TipoFuente,
+                                     @FuenteValor, @EsObligatorio, @ValorDefault, @Catalogo, @Orden, @Activo)", cn, tx))
                             {
                                 AddCommon(ins, idTrabajo, origen, destino);
-                                ins.Parameters.AddWithValue("@Campo", fila.Campo.Trim());
-                                ins.Parameters.AddWithValue("@CampoOrigen", DbValue(fila.CampoOrigen));
+                                ins.Parameters.AddWithValue("@CampoDestino", fila.CampoDestino.Trim());
+                                ins.Parameters.AddWithValue("@TipoFuente", fila.TipoFuente.Trim());
+                                ins.Parameters.AddWithValue("@FuenteValor", DbValue(fila.FuenteValor));
                                 ins.Parameters.AddWithValue("@EsObligatorio", fila.EsObligatorio);
                                 ins.Parameters.AddWithValue("@ValorDefault", DbValue(fila.ValorDefault));
                                 ins.Parameters.AddWithValue("@Catalogo", DbValue(fila.Catalogo));
                                 ins.Parameters.AddWithValue("@Orden", fila.Orden);
+                                ins.Parameters.AddWithValue("@Activo", fila.Activo);
                                 ins.ExecuteNonQuery();
                             }
                         }
