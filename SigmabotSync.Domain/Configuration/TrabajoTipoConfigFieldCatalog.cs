@@ -51,8 +51,8 @@ namespace SigmabotSync.Domain.Configuration
                 "Estatus documento destino (idEstatus, Codelco)",
                 tiposDondeVisible: new[] { TipoTrabajoIds.ProjectSync },
                 tiposDondeObligatorio: Array.Empty<string>(),
-                ayuda: "idEstatus al supersede/register en Codelco (ej. 1207959768 = Emitido para Revisión). " +
-                        "En homologación vuelta, fila statusid: Campo origen = " + ProjectSyncCampoOrigenTokens.IdEstatusDocumentoDestino + "."),
+                ayuda: "idEstatus al supersede en Codelco (ej. 1207959768). En matriz destino Codelco, fila statusid: Tipo fuente = " +
+                        ProjectSyncCampoDestinoTipoFuente.ParametroIdEstatusDestino + "."),
 
             new TrabajoConfiguracionCampoDefinicion(
                 TrabajosConfiguracionKeyNames.SubjectFiltroTransmittalVuelta,
@@ -60,20 +60,6 @@ namespace SigmabotSync.Domain.Configuration
                 tiposDondeVisible: new[] { TipoTrabajoIds.ProjectSync },
                 tiposDondeObligatorio: Array.Empty<string>(),
                 ayuda: "Solo en vuelta SALFA→Codelco (sentbox lado 2). Procesa transmitals cuyo Subject contenga este texto (ej. Final). Vacío = sin filtro."),
-
-            new TrabajoConfiguracionCampoDefinicion(
-                TrabajosConfiguracionKeyNames.CamposConsultaRegistroDestino,
-                "Campos register/search destino Codelco (CSV)",
-                tiposDondeVisible: new[] { TipoTrabajoIds.ProjectSync },
-                tiposDondeObligatorio: Array.Empty<string>(),
-                ayuda: "Supersede vuelta (SALFA→Codelco): returnFields extra en Codelco. Ej: Proveedor_singleSelect, Especialidad_singleSelect. Se unen con schema mandatory Codelco + homologación destino."),
-
-            new TrabajoConfiguracionCampoDefinicion(
-                TrabajosConfiguracionKeyNames.CamposConsultaRegistroDestinoSalfa,
-                "Campos register/search destino SALFA (CSV)",
-                tiposDondeVisible: new[] { TipoTrabajoIds.ProjectSync },
-                tiposDondeObligatorio: Array.Empty<string>(),
-                ayuda: "Supersede ida (Codelco→SALFA): returnFields extra en SALFA. No usar campos Codelco aquí. Se unen con schema mandatory SALFA + CampoDestino de homologación ida."),
 
             new TrabajoConfiguracionCampoDefinicion(
                 TrabajosConfiguracionKeyNames.CredencialAconex,
