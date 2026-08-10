@@ -22,6 +22,9 @@ namespace SigmabotSync.Domain.Config
         /// <summary>Conexión a la base de datos donde está la tabla Credenciales. Las credenciales Aconex y BD se leen desde esa tabla.</summary>
         public string DatabaseConnectionString { get; set; }
 
+        /// <summary>Cifrado de claves en tabla Credenciales (misma EncryptionKey que la API).</summary>
+        public CredencialesSettings Credenciales { get; set; }
+
         [Obsolete("Las credenciales Aconex se obtienen de la tabla Credenciales (Tipo=Aconex). Se mantiene por compatibilidad.")]
         public string UserAconex { get; set; }
         [Obsolete("Las credenciales Aconex se obtienen de la tabla Credenciales (Tipo=Aconex). Se mantiene por compatibilidad.")]

@@ -36,5 +36,30 @@ namespace SigmabotSync.Domain.Ports
             string multipartBody,
             string boundary,
             CancellationToken cancellationToken = default);
+
+        /// <summary>POST .../register con archivo en streaming (XML + base64 desde disco).</summary>
+        Task<AconexRawHttpResponse> PostRegisterDocumentWithFileAsync(
+            string baseUrl,
+            string projectId,
+            string authorizationHeaderBase64,
+            string integrationIdOrNull,
+            string xmlDocument,
+            string filePath,
+            string fileName,
+            string boundary,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>POST .../register/{documentId}/supersede con archivo en streaming.</summary>
+        Task<AconexRawHttpResponse> PostSupersedeDocumentWithFileAsync(
+            string baseUrl,
+            string projectId,
+            string documentId,
+            string authorizationHeaderBase64,
+            string integrationIdOrNull,
+            string xmlDocument,
+            string filePath,
+            string fileName,
+            string boundary,
+            CancellationToken cancellationToken = default);
     }
 }

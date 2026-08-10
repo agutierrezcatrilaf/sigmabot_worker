@@ -449,7 +449,7 @@ namespace SigmabotSync.Application.FileExtraction
         /// <param name="metadataRow">Fila de metadata.</param>
         /// <param name="columnas">Columnas de la tabla de metadata.</param>
         /// <returns>Objeto con Metadata (diccionario nombre columna -> valor) y FileBase64, FileName.</returns>
-        private static FileUploadWithMetadataBody BuildBodyWithMetadataAndFileBase64(string filePath, DataRow metadataRow, DataColumnCollection columnas)
+        private static FileUploadWithMetadataBody BuildBodyMetadata(string filePath, DataRow metadataRow, DataColumnCollection columnas)
         {
             var metadata = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (DataColumn col in columnas)
@@ -473,16 +473,22 @@ namespace SigmabotSync.Application.FileExtraction
                 metadata[col.ColumnName] = val;
             }
 
-            byte[] fileBytes = File.ReadAllBytes(filePath);
-            string fileBase64 = Convert.ToBase64String(fileBytes);
-            string fileName = Path.GetFileName(filePath);
-
             return new FileUploadWithMetadataBody
             {
                 Metadata = metadata,
-                FileBase64 = fileBase64,
-                FileName = fileName
+                FileName = Path.GetFileName(filePath)
             };
+        }
+
+        /// <summary>
+        /// Construye metadata + archivo en base64 (legacy / JSON). El upload a Aconex usa streaming desde disco.
+        /// </summary>
+        private static FileUploadWithMetadataBody BuildBodyWithMetadataAndFileBase64(string filePath, DataRow metadataRow, DataColumnCollection columnas)
+        {
+            var body = BuildBodyMetadata(filePath, metadataRow, columnas);
+            byte[] fileBytes = File.ReadAllBytes(filePath);
+            body.FileBase64 = Convert.ToBase64String(fileBytes);
+            return body;
         }
 
         /// <summary>
@@ -534,7 +540,7 @@ namespace SigmabotSync.Application.FileExtraction
             IReadOnlyDictionary<string, string> idTipoPorNombre,
             IReadOnlyDictionary<string, string> idEstatusPorNombre)
         {
-            FileUploadWithMetadataBody body = BuildBodyWithMetadataAndFileBase64(filePath, metadataRow, columnas);
+            FileUploadWithMetadataBody body = BuildBodyMetadata(filePath, metadataRow, columnas);
             string projectId = _trabajoConfig.IdProyecto ?? _aconexConfig.ProjectId ?? "";
             if (string.IsNullOrWhiteSpace(projectId))
                 throw new InvalidOperationException("IdProyecto es requerido para Register Document.");
@@ -544,16 +550,18 @@ namespace SigmabotSync.Application.FileExtraction
             Utilities.Wlog("FileUploadWithMetadata: XML Register Document (cuerpo multipart 1): " + xmlDocument, 1);
 
             string boundary = AconexRegisterMultipart.ExampleBoundary;
-            string multipartBody = AconexRegisterMultipart.BuildRegisterBody(xmlDocument, body.FileName, body.FileBase64, boundary);
+            string fileName = Path.GetFileName(filePath) ?? body.FileName;
 
             string baseUrl = string.IsNullOrWhiteSpace(_aconexConfig.AconexBaseUrl) ? "https://us1.aconex.com" : _aconexConfig.AconexBaseUrl.TrimEnd('/');
 
-            AconexRawHttpResponse raw = await _registerWritePort.PostRegisterDocumentAsync(
+            AconexRawHttpResponse raw = await _registerWritePort.PostRegisterDocumentWithFileAsync(
                 baseUrl,
                 projectId,
                 _aconexConfig.AuthorizationHeader,
                 _aconexConfig.IntegrationId,
-                multipartBody,
+                xmlDocument,
+                filePath,
+                fileName,
                 boundary,
                 default).ConfigureAwait(false);
 

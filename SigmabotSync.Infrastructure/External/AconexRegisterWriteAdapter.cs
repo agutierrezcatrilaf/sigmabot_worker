@@ -10,13 +10,16 @@ namespace SigmabotSync.Infrastructure.External
 {
     public sealed class AconexRegisterWriteAdapter : IAconexRegisterWritePort, IDisposable
     {
+        private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan LargeUploadTimeout = TimeSpan.FromMinutes(60);
+
         private readonly HttpClient _httpClient;
 
         public AconexRegisterWriteAdapter()
         {
             _httpClient = new HttpClient
             {
-                Timeout = TimeSpan.FromMinutes(10)
+                Timeout = DefaultTimeout
             };
         }
 
@@ -57,7 +60,7 @@ namespace SigmabotSync.Infrastructure.External
         {
             string root = string.IsNullOrWhiteSpace(baseUrl) ? "https://us1.aconex.com" : baseUrl.TrimEnd('/');
             string url = $"{root}/api/projects/{projectId}/register";
-            return PostMultipartMixedAsync(url, authorizationHeaderBase64, integrationIdOrNull, multipartBody, boundary, cancellationToken);
+            return PostMultipartStringAsync(url, authorizationHeaderBase64, integrationIdOrNull, multipartBody, boundary, DefaultTimeout, cancellationToken);
         }
 
         public Task<AconexRawHttpResponse> PostSupersedeDocumentAsync(
@@ -75,15 +78,54 @@ namespace SigmabotSync.Infrastructure.External
 
             string root = string.IsNullOrWhiteSpace(baseUrl) ? "https://us1.aconex.com" : baseUrl.TrimEnd('/');
             string url = $"{root}/api/projects/{projectId}/register/{documentId}/supersede";
-            return PostMultipartMixedAsync(url, authorizationHeaderBase64, integrationIdOrNull, multipartBody, boundary, cancellationToken);
+            return PostMultipartStringAsync(url, authorizationHeaderBase64, integrationIdOrNull, multipartBody, boundary, DefaultTimeout, cancellationToken);
         }
 
-        private async Task<AconexRawHttpResponse> PostMultipartMixedAsync(
+        public Task<AconexRawHttpResponse> PostRegisterDocumentWithFileAsync(
+            string baseUrl,
+            string projectId,
+            string authorizationHeaderBase64,
+            string integrationIdOrNull,
+            string xmlDocument,
+            string filePath,
+            string fileName,
+            string boundary,
+            CancellationToken cancellationToken = default)
+        {
+            string root = string.IsNullOrWhiteSpace(baseUrl) ? "https://us1.aconex.com" : baseUrl.TrimEnd('/');
+            string url = $"{root}/api/projects/{projectId}/register";
+            return PostMultipartFileAsync(
+                url, authorizationHeaderBase64, integrationIdOrNull, xmlDocument, filePath, fileName, boundary, cancellationToken);
+        }
+
+        public Task<AconexRawHttpResponse> PostSupersedeDocumentWithFileAsync(
+            string baseUrl,
+            string projectId,
+            string documentId,
+            string authorizationHeaderBase64,
+            string integrationIdOrNull,
+            string xmlDocument,
+            string filePath,
+            string fileName,
+            string boundary,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(documentId))
+                throw new ArgumentException("documentId requerido.", nameof(documentId));
+
+            string root = string.IsNullOrWhiteSpace(baseUrl) ? "https://us1.aconex.com" : baseUrl.TrimEnd('/');
+            string url = $"{root}/api/projects/{projectId}/register/{documentId}/supersede";
+            return PostMultipartFileAsync(
+                url, authorizationHeaderBase64, integrationIdOrNull, xmlDocument, filePath, fileName, boundary, cancellationToken);
+        }
+
+        private async Task<AconexRawHttpResponse> PostMultipartStringAsync(
             string requestUrl,
             string authorizationHeaderBase64,
             string integrationIdOrNull,
             string multipartBody,
             string boundary,
+            TimeSpan timeout,
             CancellationToken cancellationToken)
         {
             using (var request = new HttpRequestMessage(HttpMethod.Post, requestUrl))
@@ -97,7 +139,41 @@ namespace SigmabotSync.Infrastructure.External
                 content.Headers.ContentType.Parameters.Add(new NameValueHeaderValue("boundary", "\"" + boundary + "\""));
                 request.Content = content;
 
-                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))
+                return await SendMultipartAsync(request, timeout, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<AconexRawHttpResponse> PostMultipartFileAsync(
+            string requestUrl,
+            string authorizationHeaderBase64,
+            string integrationIdOrNull,
+            string xmlDocument,
+            string filePath,
+            string fileName,
+            string boundary,
+            CancellationToken cancellationToken)
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Post, requestUrl))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authorizationHeaderBase64);
+                if (!string.IsNullOrEmpty(integrationIdOrNull))
+                    request.Headers.TryAddWithoutValidation("X-Application-Key", integrationIdOrNull);
+
+                request.Content = new AconexRegisterMultipartMixedContent(boundary, xmlDocument, fileName, filePath);
+
+                return await SendMultipartAsync(request, LargeUploadTimeout, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<AconexRawHttpResponse> SendMultipartAsync(
+            HttpRequestMessage request,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                timeoutCts.CancelAfter(timeout);
+                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false))
                 {
                     string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     return new AconexRawHttpResponse

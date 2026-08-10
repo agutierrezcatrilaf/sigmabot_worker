@@ -521,7 +521,7 @@ namespace SigmabotSync.Application.Synchronization
                     $"rev {existing.Revision ?? "?"} → {revision} (id={existing.DocumentId})");
                 bool superseded = await SupersedeDocumentAsync(
                     request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
-                    attachment, revision, destDocNoForLog, existing.DocumentId, fileName: null, fileBase64: null, hasFile: false,
+                    attachment, revision, destDocNoForLog, existing.DocumentId, fileName: null, filePath: null, hasFile: false,
                     mailHints, sourceHints, existing.RegisterHints, mailId, log, cancellationToken).ConfigureAwait(false);
                 return superseded;
             }
@@ -534,7 +534,8 @@ namespace SigmabotSync.Application.Synchronization
             string boundary = AconexRegisterMultipart.CreateBoundary();
             string body = AconexRegisterMultipart.BuildRegisterBodyXmlOnly(xml, boundary);
 
-            LogRegisterHttpDebug(request, targetProject, body, boundary, xml, "marcador " + mappingKey, log);
+            LogRegisterHttpDebug(
+                request, targetProject, boundary, xml, "marcador " + mappingKey, log, body, fileName: null, fileSizeBytes: null);
 
             var response = await _registerWrite.PostRegisterDocumentAsync(
                 request.BaseUrl,
@@ -642,15 +643,13 @@ namespace SigmabotSync.Application.Synchronization
                     return false;
                 }
 
-                byte[] bytes = File.ReadAllBytes(tempFile);
-                string fileBase64 = Convert.ToBase64String(bytes);
                 string fileName = string.IsNullOrWhiteSpace(attachment.FileName) ? attachment.DocumentNo + ".bin" : attachment.FileName;
 
                 if (existing == null || string.IsNullOrWhiteSpace(existing.DocumentId))
                 {
                     return await RegisterWithFileAsync(
                         request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
-                        attachment, revision, mappingKey, fileName, fileBase64, mailId, mailHints, sourceHints, log, cancellationToken).ConfigureAwait(false);
+                        attachment, revision, mappingKey, fileName, tempFile, mailId, mailHints, sourceHints, log, cancellationToken).ConfigureAwait(false);
                 }
 
                 string destDocNoForLog = ResolveSupersedeDestinationDocumentNo(existing, mappingKey);
@@ -659,7 +658,7 @@ namespace SigmabotSync.Application.Synchronization
                     $"rev {existing.Revision ?? "?"} → {revision} (id={existing.DocumentId})");
                 return await SupersedeDocumentAsync(
                     request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
-                    attachment, revision, destDocNoForLog, existing.DocumentId, fileName, fileBase64, hasFile: true,
+                    attachment, revision, destDocNoForLog, existing.DocumentId, fileName, tempFile, hasFile: true,
                     mailHints, sourceHints, existing.RegisterHints, mailId, log, cancellationToken).ConfigureAwait(false);
             }
             finally
@@ -679,7 +678,7 @@ namespace SigmabotSync.Application.Synchronization
             string revision,
             string destinationDocumentNo,
             string fileName,
-            string fileBase64,
+            string filePath,
             string mailId,
             IReadOnlyDictionary<string, string> mailHints,
             IReadOnlyDictionary<string, string> sourceHints,
@@ -692,16 +691,20 @@ namespace SigmabotSync.Application.Synchronization
                 return false;
 
             string boundary = AconexRegisterMultipart.CreateBoundary();
-            string body = AconexRegisterMultipart.BuildRegisterBody(xml, fileName, fileBase64, boundary);
+            long fileSize = new FileInfo(filePath).Length;
 
-            LogRegisterHttpDebug(request, targetProject, body, boundary, xml, "archivo " + destinationDocumentNo, log);
+            LogRegisterHttpDebug(
+                request, targetProject, boundary, xml, "archivo " + destinationDocumentNo, log,
+                multipartBody: null, fileName, fileSize, isSupersede: false);
 
-            var response = await _registerWrite.PostRegisterDocumentAsync(
+            var response = await _registerWrite.PostRegisterDocumentWithFileAsync(
                 request.BaseUrl,
                 targetProject.ProjectId,
                 request.AuthorizationHeaderBase64,
                 request.IntegrationId,
-                body,
+                xml,
+                filePath,
+                fileName,
                 boundary,
                 cancellationToken).ConfigureAwait(false);
 
@@ -722,7 +725,7 @@ namespace SigmabotSync.Application.Synchronization
                             $"rev {existing.Revision ?? "?"} → {revision} (id={existing.DocumentId})");
                         return await SupersedeDocumentAsync(
                             request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
-                            attachment, revision, destDocNoForLog, existing.DocumentId, fileName, fileBase64, hasFile: true,
+                            attachment, revision, destDocNoForLog, existing.DocumentId, fileName, filePath, hasFile: true,
                             mailHints, sourceHints, existing.RegisterHints, mailId, log, cancellationToken).ConfigureAwait(false);
                     }
 
@@ -763,7 +766,7 @@ namespace SigmabotSync.Application.Synchronization
             string destinationDocumentNo,
             string localDocumentId,
             string fileName,
-            string fileBase64,
+            string filePath,
             bool hasFile,
             IReadOnlyDictionary<string, string> mailHints,
             IReadOnlyDictionary<string, string> sourceHints,
@@ -780,24 +783,46 @@ namespace SigmabotSync.Application.Synchronization
                 return false;
 
             string boundary = AconexRegisterMultipart.CreateBoundary();
-            string body = hasFile
-                ? AconexRegisterMultipart.BuildRegisterBody(xml, fileName, fileBase64, boundary)
-                : AconexRegisterMultipart.BuildRegisterBodyXmlOnly(xml, boundary);
+            AconexRawHttpResponse response;
 
-            LogRegisterHttpDebug(
-                request, targetProject, body, boundary, xml,
-                $"supersede {(hasFile ? "archivo" : "marcador")} {destinationDocumentNo}",
-                log, isSupersede: true, localDocumentId: localDocumentId);
+            if (hasFile)
+            {
+                long fileSize = new FileInfo(filePath).Length;
+                LogRegisterHttpDebug(
+                    request, targetProject, boundary, xml,
+                    $"supersede archivo {destinationDocumentNo}",
+                    log, multipartBody: null, fileName, fileSize, isSupersede: true, localDocumentId: localDocumentId);
 
-            var response = await _registerWrite.PostSupersedeDocumentAsync(
-                request.BaseUrl,
-                targetProject.ProjectId,
-                localDocumentId,
-                request.AuthorizationHeaderBase64,
-                request.IntegrationId,
-                body,
-                boundary,
-                cancellationToken).ConfigureAwait(false);
+                response = await _registerWrite.PostSupersedeDocumentWithFileAsync(
+                    request.BaseUrl,
+                    targetProject.ProjectId,
+                    localDocumentId,
+                    request.AuthorizationHeaderBase64,
+                    request.IntegrationId,
+                    xml,
+                    filePath,
+                    fileName,
+                    boundary,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                string body = AconexRegisterMultipart.BuildRegisterBodyXmlOnly(xml, boundary);
+                LogRegisterHttpDebug(
+                    request, targetProject, boundary, xml,
+                    $"supersede marcador {destinationDocumentNo}",
+                    log, body, fileName: null, fileSizeBytes: null, isSupersede: true, localDocumentId: localDocumentId);
+
+                response = await _registerWrite.PostSupersedeDocumentAsync(
+                    request.BaseUrl,
+                    targetProject.ProjectId,
+                    localDocumentId,
+                    request.AuthorizationHeaderBase64,
+                    request.IntegrationId,
+                    body,
+                    boundary,
+                    cancellationToken).ConfigureAwait(false);
+            }
 
             string responseText = response?.Body ?? "";
             if (response == null || !response.IsSuccessStatusCode)
@@ -2193,11 +2218,13 @@ namespace SigmabotSync.Application.Synchronization
         private static void LogRegisterHttpDebug(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem targetProject,
-            string multipartBody,
             string boundary,
             string xmlDocument,
             string label,
             Action<string> log,
+            string multipartBody,
+            string fileName,
+            long? fileSizeBytes,
             bool isSupersede = false,
             string localDocumentId = null)
         {
@@ -2212,16 +2239,33 @@ namespace SigmabotSync.Application.Synchronization
             LogSingleSelectEncodingWarnings(xmlDocument, log);
 
             log($"REGISTER HTTP ({label}): POST {url}");
+
+            bool streamingUpload = fileSizeBytes.HasValue
+                && fileSizeBytes.Value >= AconexRegisterMultipart.StreamingUploadThresholdBytes;
+
+            if (streamingUpload)
+            {
+                long approxBase64 = (fileSizeBytes.Value + 2) / 3 * 4;
+                log(
+                    $"REGISTER upload streaming ({label}): archivo {fileName ?? "?"} " +
+                    $"{fileSizeBytes.Value} bytes binarios (~{approxBase64} chars base64 en wire, sin body en memoria)");
+                return;
+            }
+
             log($"REGISTER multipart ({label}, {multipartBody?.Length ?? 0} chars):{Environment.NewLine}{FormatMultipartBodyForLog(multipartBody)}");
-            log(
-                $"REGISTER curl ({label}):{Environment.NewLine}" +
-                AconexRegisterMultipart.FormatCurlEquivalent(
-                    "POST",
-                    url,
-                    request?.AuthorizationHeaderBase64,
-                    request?.IntegrationId,
-                    multipartBody,
-                    boundary));
+
+            if (multipartBody != null && multipartBody.Length <= AconexRegisterMultipart.MaxInlineMultipartLogChars)
+            {
+                log(
+                    $"REGISTER curl ({label}):{Environment.NewLine}" +
+                    AconexRegisterMultipart.FormatCurlEquivalent(
+                        "POST",
+                        url,
+                        request?.AuthorizationHeaderBase64,
+                        request?.IntegrationId,
+                        multipartBody,
+                        boundary));
+            }
         }
 
         private static void LogSingleSelectEncodingWarnings(string xmlDocument, Action<string> log)
@@ -2257,7 +2301,7 @@ namespace SigmabotSync.Application.Synchronization
             if (string.IsNullOrEmpty(multipartBody))
                 return "";
 
-            const int maxChars = 12000;
+            const int maxChars = AconexRegisterMultipart.MaxInlineMultipartLogChars;
             if (multipartBody.Length <= maxChars)
                 return multipartBody;
 

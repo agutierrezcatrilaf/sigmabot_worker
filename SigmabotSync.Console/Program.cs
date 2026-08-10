@@ -5,6 +5,7 @@ using SigmabotSync.Domain.Config;
 using SigmabotSync.Domain.Configuration;
 using SigmabotSync.Domain.Entities;
 using SigmabotSync.Domain.Ports;
+using SigmabotSync.Domain.Security;
 using SigmabotSync.Infrastructure.External;
 using SigmabotSync.Infrastructure.Services;
 using System;
@@ -26,6 +27,8 @@ namespace SigmabotSync.Console
         private static readonly int? DebugIdTrabajo = null;
 #endif
 
+        private static ICredencialClaveProtector _claveProtector = NullCredencialClaveProtector.Instance;
+
         static async Task Main(string[] args)
         {
             DailyLog.Inicializar();
@@ -34,7 +37,7 @@ namespace SigmabotSync.Console
             SigmabotSync.Application.Common.Utilities.Wlog("Log: " + DailyLog.GetRutaLogActual(), 0);
             SigmabotSync.Application.Common.Utilities.Wlog("", 0);
 
-            string connectionString = ObtenerConnectionStringDesdeSettings();
+            string connectionString = InicializarDesdeSettings();
             if (connectionString == null)
                 return;
 
@@ -679,10 +682,9 @@ namespace SigmabotSync.Console
         }
 
         /// <summary>
-        /// Lee el archivo de configuración (settings.json) y valida que exista una DatabaseConnectionString.
-        /// En caso de error, muestra el mensaje y espera una tecla. Devuelve null si no es posible continuar.
+        /// Lee settings.json: conexión BD y clave de cifrado de credenciales (misma que la API).
         /// </summary>
-        private static string ObtenerConnectionStringDesdeSettings()
+        private static string InicializarDesdeSettings()
         {
             var settingsService = new SettingsService();
             var settings = settingsService.Load();
@@ -693,6 +695,13 @@ namespace SigmabotSync.Console
                 SigmabotSync.Application.Common.Utilities.Wlog("Configura la conexión a la base de datos donde están las tablas Credenciales, Trabajos y TrabajosConfiguracion.", 0);
                 return null;
             }
+
+            _claveProtector = CredencialClaveProtectorFactory.CreateOptional(settings.Credenciales?.EncryptionKey);
+            if (_claveProtector.IsEnabled)
+                SigmabotSync.Application.Common.Utilities.Wlog("Cifrado credenciales: activo (Credenciales:EncryptionKey en settings.json).", 0);
+            else
+                SigmabotSync.Application.Common.Utilities.Wlog(
+                    "Cifrado credenciales: sin EncryptionKey; claves en BD deben estar en texto plano (enc:v1: requiere la misma clave que la API).", 0);
 
             return ConnectionStringHelper.AsegurarTrustServerCertificate(settings.DatabaseConnectionString.Trim());
         }
@@ -753,7 +762,7 @@ namespace SigmabotSync.Console
             credAconex = null;
             credBd = null;
 
-            var credService = new CredencialesService(connectionString);
+            var credService = new CredencialesService(connectionString, _claveProtector);
             credAconex = credService.GetById(trabajoConfig.CredencialAconexId.Value);
             credBd = credService.GetById(trabajoConfig.CredencialBDId.Value);
 

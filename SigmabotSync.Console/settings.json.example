@@ -1,3 +1,6 @@
 {
-  "DatabaseConnectionString": "Server=SERVIDOR;Database=sigmabot;User Id=USUARIO;Password=CLAVE;"
+  "DatabaseConnectionString": "Server=SERVIDOR;Database=sigmabot;User Id=USUARIO;Password=CLAVE;",
+  "Credenciales": {
+    "EncryptionKey": "MISMA_CLAVE_BASE64_32_BYTES_QUE_API"
+  }
 }

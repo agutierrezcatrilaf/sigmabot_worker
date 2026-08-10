@@ -11,6 +11,11 @@ namespace SigmabotSync.Application.Common
     /// </summary>
     public static class AconexRegisterMultipart
     {
+        /// <summary>Máximo de caracteres del body multipart en logs cuando se usa modo string.</summary>
+        public const int MaxInlineMultipartLogChars = 12000;
+
+        /// <summary>Archivos mayores a este tamaño usan upload streaming y no se loguea el body.</summary>
+        public const long StreamingUploadThresholdBytes = 1 * 1024 * 1024;
         /// <summary>
         /// Mismo valor que en el curl de ejemplo: <c>boundary="myboundary"</c>. Es válido usar siempre este string.
         /// </summary>

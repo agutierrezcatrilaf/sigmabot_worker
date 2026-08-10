@@ -2,6 +2,7 @@ using System;
 using System.Data;
 using Microsoft.Data.SqlClient;
 using SigmabotSync.Domain.Entities;
+using SigmabotSync.Domain.Security;
 using SigmabotSync.Infrastructure.Data;
 
 namespace SigmabotSync.Infrastructure.Services
@@ -13,10 +14,12 @@ namespace SigmabotSync.Infrastructure.Services
     public class CredencialesService
     {
         private readonly string _connectionString;
+        private readonly ICredencialClaveProtector _claveProtector;
 
-        public CredencialesService(string connectionString)
+        public CredencialesService(string connectionString, ICredencialClaveProtector claveProtector = null)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+            _claveProtector = claveProtector ?? NullCredencialClaveProtector.Instance;
         }
 
         /// <summary>
@@ -43,7 +46,7 @@ namespace SigmabotSync.Infrastructure.Services
                         adapter.Fill(dt);
                         if (dt.Rows.Count == 0)
                             return null;
-                        return dt.Rows[0].MapTo<Credencial>();
+                        return MapCredencial(dt.Rows[0]);
                     }
                 }
             }
@@ -77,10 +80,17 @@ namespace SigmabotSync.Infrastructure.Services
                         adapter.Fill(dt);
                         if (dt.Rows.Count == 0)
                             return null;
-                        return dt.Rows[0].MapTo<Credencial>();
+                        return MapCredencial(dt.Rows[0]);
                     }
                 }
             }
+        }
+
+        private Credencial MapCredencial(DataRow row)
+        {
+            var credencial = row.MapTo<Credencial>();
+            credencial.UnprotectClaves(_claveProtector);
+            return credencial;
         }
     }
 }
