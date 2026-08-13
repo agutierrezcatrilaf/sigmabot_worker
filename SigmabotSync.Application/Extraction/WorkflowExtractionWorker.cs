@@ -65,7 +65,8 @@ namespace SigmabotSync.Application.Extraction
             catch (Exception ex)
             {
                 // Log o manejo de error
-                Utilities.Wlog($"Error en FlujosdeTrabajo: {ex.Message}", 0);
+                Utilities.Wlog($"Error en FlujosdeTrabajo: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -231,7 +232,9 @@ namespace SigmabotSync.Application.Extraction
                     }
                     catch (Exception ex)
                     {
-                        Utilities.Wlog($"Documentos: ERROR Actualizando Base de datos: {sql}\n{ex.Message}", 0);
+                        Utilities.Wlog($"Flujos: ERROR Actualizando BD ({modulo}): {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                        AppState.IncErroresFlujos();
+                        Utilities.Wlog($"Flujos: detalle SQL ({modulo}): {Utilities.TruncateForLog(sql, 400)}", 1);
                     }
 
                     try
@@ -240,7 +243,7 @@ namespace SigmabotSync.Application.Extraction
                     }
                     catch (Exception ex)
                     {
-                        Utilities.Wlog($"Flujos: no se pudo eliminar archivo '{archivo}': {ex.Message}", 1);
+                        Utilities.Wlog($"Flujos: no se pudo eliminar archivo '{archivo}': {Utilities.TruncateForLog(ex.Message, 200)}", 1);
                     }
                 }
             }
@@ -295,7 +298,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{LoadUsersToMemory}}: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{LoadUsersToMemory}}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -337,7 +341,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{NewACXUsersToMemory}}: Proyecto: {_config["NombrePrj"]} ({projid}) Mensaje: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{NewACXUsersToMemory}}: Proyecto: {_config["NombrePrj"]} ({projid}) Mensaje: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -361,7 +366,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{dbUserToDbTmp}}: {user["UserName"]?.InnerText} ({user["UserId"]?.InnerText}) : {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{dbUserToDbTmp}}: {user["UserName"]?.InnerText} ({user["UserId"]?.InnerText}) : {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -379,7 +385,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{dbUserExists}} userid={userid}: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{dbUserExists}} userid={userid}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
                 return false;
             }
         }
@@ -400,7 +407,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{dbAddProjectUsersTmp}}: {projectId}: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{dbAddProjectUsersTmp}}: {projectId}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -440,7 +448,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{loadProjectWorkflowstoMemory}}: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{loadProjectWorkflowstoMemory}}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -491,7 +500,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{loadProjectWorkflowsStepstoMemory}}: {_config["NombrePrj"]} ({projid}): {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{loadProjectWorkflowsStepstoMemory}}: {_config["NombrePrj"]} ({projid}): {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -530,7 +540,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{datos actuales}}: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{datos actuales}}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -591,6 +602,7 @@ namespace SigmabotSync.Application.Extraction
                         if (tmalas > 0)
                         {
                             Utilities.Wlog("Flujos: Total paginas con errores: " + tmalas, 1);
+                            AppState.IncErroresFlujos();
                         }
                         else
                         {
@@ -610,7 +622,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{GetACXWorkflows}}: {_config["NombrePrj"]} ({projid}) Mensaje: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{GetACXWorkflows}}: {_config["NombrePrj"]} ({projid}) Mensaje: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
             finally
             {
@@ -650,7 +663,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{GetMaxPages}}: {_config["NombrePrj"]} ({projid}) Mensaje: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{GetMaxPages}}: {_config["NombrePrj"]} ({projid}) Mensaje: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
                 return 0;
             }
         }
@@ -662,7 +676,7 @@ namespace SigmabotSync.Application.Extraction
             bool resultado = true;
 
             string uri = $"https://us1.aconex.com/api/projects/{projid}/workflows?page_size=300&page_number={pagina}";
-            Console.WriteLine("Pagina: " + pagina);
+            Utilities.Wlog("Flujos: Página " + pagina, 1);
 
             try
             {
@@ -691,7 +705,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog("Flujos: ERROR {getWorkflowbyPage}: " + ex.Message, 0);
+                Utilities.Wlog("Flujos: ERROR {getWorkflowbyPage}: " + Utilities.TruncateForLog(ex.Message, 200), 0);
+                AppState.IncErroresFlujos();
                 resultado = false;
             }
 
@@ -879,7 +894,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog("Flujos: ERROR {AgregaPasoFlujo}:" + projectId + ":" + wfs.GetAttribute("WorkflowId") + ":" + ex.Message, 0);
+                Utilities.Wlog("Flujos: ERROR {AgregaPasoFlujo}:" + projectId + ":" + wfs.GetAttribute("WorkflowId") + ":" + Utilities.TruncateForLog(ex.Message, 200), 0);
+                AppState.IncErroresFlujos();
             }
         }
 
@@ -908,7 +924,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR al parsear fecha (DateSerial): sdate={sdate}, {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR al parsear fecha (DateSerial): sdate={sdate}, {Utilities.TruncateForLog(ex.Message, 200)}", 0);
                 return null;
             }
         }
@@ -925,7 +941,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR GetSingleSelect nodo={nodo}: {ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR GetSingleSelect nodo={nodo}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
             }
             return string.Empty;
         }
@@ -955,7 +971,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
 
             SqlTransaction transaction;
@@ -1067,7 +1084,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Flujos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{ex.Message}", 0);
+                Utilities.Wlog($"Flujos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresFlujos();
             }
 
             _dbConWorkflow.Close();

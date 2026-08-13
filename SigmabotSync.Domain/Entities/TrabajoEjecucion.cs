@@ -20,5 +20,7 @@ namespace SigmabotSync.Domain.Entities
         public string DetalleEjecucion { get; set; }
         /// <summary>Origen de la ejecución: "Manual" o "Scheduler".</summary>
         public string TipoEjecucion { get; set; }
+        /// <summary>Ruta del archivo job-{idTrabajo}-ejec-{id}.log de esta ejecución.</summary>
+        public string RutaLog { get; set; }
     }
 }

@@ -39,10 +39,6 @@ namespace SigmabotSync.Application.Extraction
         private readonly ConcurrentBag<DocumentoDto> _bagDocumentosRecibidos = new ConcurrentBag<DocumentoDto>();
         private readonly ConcurrentBag<DocumentoDto> _bagDocumentosEnviados = new ConcurrentBag<DocumentoDto>();
 
-
-        private List<ControlProcesoCorreos> controles = new List<ControlProcesoCorreos>();
-
-
         private HashSet<string> _mailIdsInbox;
         private HashSet<string> _mailIdsSent;
 
@@ -201,7 +197,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR {{DatosActuales}}: {_config["NombrePrj"]} ({projid}): {ex.Message}", 0);
+                Utilities.Wlog($"Correos: ERROR {{DatosActuales}}: {_config["NombrePrj"]} ({projid}): {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresCorreos();
             }
         }
 
@@ -242,7 +239,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR al obtener total de páginas (GetMaxPages): {ex.Message}", 0);
+                Utilities.Wlog($"Correos: ERROR al obtener total de páginas (GetMaxPages): {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresCorreos();
                 return 0;
             }
         }
@@ -301,15 +299,11 @@ namespace SigmabotSync.Application.Extraction
 
                 AppState.totalCorreosRecibidosProcesados = CorreosRecibidosTmp.Rows.Count;
                 AppState.totalCorreosEnviadosProcesados = CorreosEnviadosTmp.Rows.Count;
-
-                foreach (var control in controles)
-                {
-                    GuardarControlCorreos(control);
-                }
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{ex.Message}", 0);
+                Utilities.Wlog($"Correos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresCorreos();
             }
             finally
             {
@@ -379,16 +373,16 @@ namespace SigmabotSync.Application.Extraction
             }
         }
 
-        // M�todo principal optimizado con reintento
+        // Método principal optimizado con reintento
         void GetTransmittalsOptimizedWithRetry(string projid)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             string authcode = Utilities.EncodeTexto(_config["ACXUser"] + ":" + _config["ACXPass"]);
 
+            ConfigurarRangoLookback();
+
             foreach (var mailbox in new[] { "inbox", "sentbox" })
             {
-                GetOrCreateControlCorreos(projid, mailbox);
-
                 Utilities.Wlog($"[{mailbox.ToUpper()}] Inicio de GetTransmittals para {projid}", 1);
                 var stopwatch = new System.Diagnostics.Stopwatch();
                 stopwatch.Start();
@@ -396,7 +390,7 @@ namespace SigmabotSync.Application.Extraction
                 long maxpages = GetMaxPages(projid, authcode, mailbox);
                 if (maxpages <= 0) continue;
 
-                // Lista de p�ginas fallidas para reintento
+                // Lista de páginas fallidas para reintento
                 List<long> paginasFallidas = new List<long>();
 
                 for (long pagina = 1; pagina <= maxpages; pagina++)
@@ -405,15 +399,15 @@ namespace SigmabotSync.Application.Extraction
                     if (!exito) paginasFallidas.Add(pagina);
                 }
 
-                // Reintento de p�ginas fallidas
+                // Reintento de páginas fallidas
                 foreach (long pagina in paginasFallidas)
                 {
-                    Utilities.Wlog($"[{mailbox.ToUpper()}] Reintentando p�gina {pagina} para {projid}", 1);
+                    Utilities.Wlog($"[{mailbox.ToUpper()}] Reintentando página {pagina} para {projid}", 1);
                     ProcesarPagina(projid, authcode, mailbox, pagina);
                 }
 
                 stopwatch.Stop();
-                Utilities.Wlog($"[{mailbox.ToUpper()}] Finaliz� GetTransmittals para {projid} en {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}", 1);
+                Utilities.Wlog($"[{mailbox.ToUpper()}] Finalizó GetTransmittals para {projid} en {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}", 1);
 
             }
         }
@@ -485,7 +479,8 @@ namespace SigmabotSync.Application.Extraction
                         }
                         catch (Exception ex)
                         {
-                            Utilities.Wlog($"Correos: ERROR ParallelMail:{projid} - {ex.Message}", 0);
+                            Utilities.Wlog($"Correos: ERROR ParallelMail:{projid} - {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                            AppState.IncErroresCorreos();
                         }
                     });
 
@@ -493,7 +488,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR ProcesarPagina {mailbox} p�gina {pagina} - {projid} - {ex.Message}", 0);
+                Utilities.Wlog($"Correos: ERROR ProcesarPagina {mailbox} p�gina {pagina} - {projid} - {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresCorreos();
                 return false;
             }
         }
@@ -542,7 +538,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR ProcesarCorreoSinAdjuntos {projectId} - MailId: {mdoc.GetAttribute("MailId")} - {ex.Message}", 0);
+                Utilities.Wlog($"Correos: ERROR ProcesarCorreoSinAdjuntos {projectId} - MailId: {mdoc.GetAttribute("MailId")} - {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresCorreos();
             }
         }
 
@@ -647,100 +644,27 @@ namespace SigmabotSync.Application.Extraction
 
 
 
-        private ControlProcesoCorreos GetOrCreateControlCorreos(string projId, string mailbox)
+        /// <summary>
+        /// Rango fijo tipo ProjectSync: desde hoy hacia atrás N días (config DiasLookbackCorreos, default 30).
+        /// Los MailId ya en BD se omiten (insert-only).
+        /// </summary>
+        private void ConfigurarRangoLookback()
         {
-            ControlProcesoCorreos control = null;
-
-            bool cerrarConexion = _dbConMails.State != ConnectionState.Open;
-            if (cerrarConexion) _dbConMails.Open();
-
-            using (var cmd = new SqlCommand(@"
-            SELECT UltimaFecha, RangoDias
-            FROM ProcesoCorreosControl
-            WHERE ProjId = @ProjId AND Mailbox = @Mailbox", _dbConMails))
+            int dias = 30;
+            if (_config != null
+                && _config.TryGetValue("DiasLookbackCorreos", out var raw)
+                && int.TryParse(raw, out var parsed)
+                && parsed > 0)
             {
-                cmd.Parameters.AddWithValue("@ProjId", projId);
-                cmd.Parameters.AddWithValue("@Mailbox", mailbox);
-
-                using (var reader = cmd.ExecuteReader())
-                {
-                    if (reader.Read())
-                    {
-                        control = new ControlProcesoCorreos
-                        {
-                            ProjId = projId,
-                            Mailbox = mailbox,
-                            UltimaFechaProcesada = reader.GetDateTime(0),
-                            RangoDias = reader.GetInt32(1)
-                        };
-                    }
-                }
+                dias = parsed;
             }
 
-            if (control == null)
-            {
-                // Valores por defecto si no hay registro
-                control = new ControlProcesoCorreos
-                {
-                    ProjId = projId,
-                    Mailbox = mailbox,
-                    UltimaFechaProcesada = DateTime.UtcNow.AddDays(-30),
-                    RangoDias = 30
-                };
-            }
-
-            if (cerrarConexion) _dbConMails.Close();
-
-            // Calcular fechas para el endpoint
-            _fechaInicio = control.UltimaFechaProcesada.ToString("yyyyMMdd");
-            DateTime fechaFinDate = control.UltimaFechaProcesada.AddDays(control.RangoDias);
-            if (fechaFinDate > DateTime.UtcNow)
-                fechaFinDate = DateTime.UtcNow;
-
-            _fechaFin = fechaFinDate.ToString("yyyyMMdd");
-            control.UltimaFechaProcesada = fechaFinDate.Date;
-
-            // Guardar en memoria
-            controles.Add(control);
-
-            return control;
+            var hasta = DateTime.UtcNow.Date;
+            var desde = hasta.AddDays(-dias);
+            _fechaInicio = desde.ToString("yyyyMMdd");
+            _fechaFin = hasta.ToString("yyyyMMdd");
+            Utilities.Wlog($"[Correos] Lookback={dias} días: sentdate:[{_fechaInicio} TO {_fechaFin}]", 0);
         }
-
-
-
-
-
-        private void GuardarControlCorreos(ControlProcesoCorreos control)
-        {
-            bool cerrarConexion = _dbConMails.State != ConnectionState.Open;
-            if (cerrarConexion) _dbConMails.Open();
-
-            using (var cmd = new SqlCommand(@"
-        IF EXISTS (SELECT 1 FROM ProcesoCorreosControl WHERE ProjId = @ProjId AND Mailbox = @Mailbox)
-        BEGIN
-            UPDATE ProcesoCorreosControl
-            SET UltimaFecha = @UltimaFecha,
-                RangoDias = @RangoDias
-            WHERE ProjId = @ProjId AND Mailbox = @Mailbox
-        END
-        ELSE
-        BEGIN
-            INSERT INTO ProcesoCorreosControl (ProjId, Mailbox, UltimaFecha, RangoDias)
-            VALUES (@ProjId, @Mailbox, @UltimaFecha, @RangoDias)
-        END", _dbConMails))
-            {
-                cmd.Parameters.AddWithValue("@ProjId", control.ProjId);
-                cmd.Parameters.AddWithValue("@Mailbox", control.Mailbox);
-                cmd.Parameters.AddWithValue("@UltimaFecha", control.UltimaFechaProcesada);
-                cmd.Parameters.AddWithValue("@RangoDias", control.RangoDias);
-
-                cmd.ExecuteNonQuery();
-            }
-
-            if (cerrarConexion) _dbConMails.Close();
-        }
-
-
 
         void MapBagsToDataTables()
         {

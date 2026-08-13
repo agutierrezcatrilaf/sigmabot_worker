@@ -61,7 +61,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: no se pudo deserializar DocumentFieldMappings, usando valores por defecto: {ex.Message}", 0);
+                Utilities.Wlog($"Documentos: no se pudo deserializar DocumentFieldMappings, usando valores por defecto: {Utilities.TruncateForLog(ex.Message, 200)}", 1);
             }
             return new List<DocumentFieldMapping>(DefaultFieldMappings);
         }
@@ -146,7 +146,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{datos actuales}}: {ex.Message}", 0);
+                Utilities.Wlog($"Documentos: ERROR {{datos actuales}}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresDocumentos();
             }
         }
 
@@ -169,7 +170,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{GetACXDocuments}}: {_config["NombrePrj"]} ({projectID}) Mensaje: {ex.Message}", 0);
+                Utilities.Wlog($"Documentos: ERROR {{GetACXDocuments}}: {_config["NombrePrj"]} ({projectID}) Mensaje: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresDocumentos();
             }
         }
 
@@ -237,7 +239,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}: {ex.Message}", 0);
+                Utilities.Wlog($"Documentos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresDocumentos();
             }
 
             _dbConDocs.Close();
@@ -300,7 +303,8 @@ namespace SigmabotSync.Application.Extraction
                                         }
                                         catch (Exception ex)
                                         {
-                                            Utilities.Wlog($"Documentos: ERROR al procesar doc {doc.Id} en proyecto {projid}, p�gina {currentPage}: {ex.Message}", 0);
+                                            Utilities.Wlog($"Documentos: ERROR al procesar doc {doc.Id} en proyecto {projid}, p�gina {currentPage}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                                            AppState.IncErroresDocumentos();
                                         }
                                     }
                                 }
@@ -309,7 +313,8 @@ namespace SigmabotSync.Application.Extraction
                         }
                         catch (Exception ex)
                         {
-                            Utilities.Wlog($"Documentos: ERROR al obtener la p�gina {currentPage} del proyecto {projid}: {ex.Message}", 0);
+                            Utilities.Wlog($"Documentos: ERROR al obtener la p�gina {currentPage} del proyecto {projid}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                            AppState.IncErroresDocumentos();
                         }
                         finally
                         {
@@ -325,7 +330,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR general en proyecto {projid}: {ex.Message}", 0);
+                Utilities.Wlog($"Documentos: ERROR general en proyecto {projid}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresDocumentos();
                 return false;
             }
         }
@@ -379,7 +385,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{AgregaDocumentoNuevo}}:{projectId}:{ex.Message}", 0);
+                Utilities.Wlog($"Documentos: ERROR {{AgregaDocumentoNuevo}}:{projectId}:{Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                AppState.IncErroresDocumentos();
             }
         }
 

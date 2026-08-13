@@ -41,14 +41,4 @@ namespace SigmabotSync.Domain.Models.Extraction
         public string UserName { get; set; }
         public string Organization { get; set; }
     }
-
-    public class ControlProcesoCorreos
-    {
-        public string ProjId { get; set; }
-        public string Mailbox { get; set; }
-        public DateTime UltimaFechaProcesada { get; set; }
-        public int RangoDias { get; set; }
-        public int TotalDescargados { get; set; }
-        public int TotalProcesados { get; set; }
-    }
 }

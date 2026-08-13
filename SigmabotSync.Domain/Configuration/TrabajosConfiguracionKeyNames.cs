@@ -11,6 +11,8 @@ namespace SigmabotSync.Domain.Configuration
         public const string IdProyecto2 = "IdProyecto2";
         public const string Proyecto2 = "Proyecto2";
         public const string DiasLookbackTransmittal = "DiasLookbackTransmittal";
+        /// <summary>Días hacia atrás para buscar correos/transmitals en FullExtraction (MailExtraction).</summary>
+        public const string DiasLookbackCorreos = "DiasLookbackCorreos";
         /// <summary>Primer segmento del docno SALFA (ida Codelco→SALFA). No es el N° contrato Codelco.</summary>
         public const string CodigoProyectoSalfa = "CodigoProyectoSalfa";
         public const string CredencialAconex = "CredencialAconex";

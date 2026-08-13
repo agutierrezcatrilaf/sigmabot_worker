@@ -48,8 +48,13 @@ namespace SigmabotSync.Domain.Config
             };
             if (DocumentFieldMappings != null && DocumentFieldMappings.Count > 0)
                 d["DocumentFieldMappings"] = JsonConvert.SerializeObject(DocumentFieldMappings);
+            if (DiasLookbackCorreos.HasValue && DiasLookbackCorreos.Value > 0)
+                d["DiasLookbackCorreos"] = DiasLookbackCorreos.Value.ToString();
             return d;
         }
+
+        /// <summary>Días hacia atrás para MailExtraction (FullExtraction). Null = default del worker (30).</summary>
+        public int? DiasLookbackCorreos { get; set; }
 
         /// <summary>
         /// Crea una configuración desde la tabla Credenciales: credencial Aconex (Tipo=Aconex) y credencial BD (Tipo=BD).

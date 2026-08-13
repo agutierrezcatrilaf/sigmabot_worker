@@ -47,6 +47,13 @@ namespace SigmabotSync.Domain.Configuration
                 ayuda: "Días hacia atrás para buscar transmitals en inbox del origen. Default 30."),
 
             new TrabajoConfiguracionCampoDefinicion(
+                TrabajosConfiguracionKeyNames.DiasLookbackCorreos,
+                "Días lookback correos",
+                tiposDondeVisible: new[] { TipoTrabajoIds.FullExtraction },
+                tiposDondeObligatorio: Array.Empty<string>(),
+                ayuda: "Días hacia atrás desde hoy para buscar correos (inbox/sentbox). Default 30. Los MailId ya en BD se omiten."),
+
+            new TrabajoConfiguracionCampoDefinicion(
                 TrabajosConfiguracionKeyNames.IdEstatusDocumentoDestino,
                 "Estatus documento destino (idEstatus, Codelco)",
                 tiposDondeVisible: new[] { TipoTrabajoIds.ProjectSync },

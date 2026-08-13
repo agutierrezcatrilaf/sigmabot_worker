@@ -1,12 +1,12 @@
 using SigmabotSync.Application.Common;
 using SigmabotSync.Domain.Config;
+using SigmabotSync.Domain.Execution;
 using SigmabotSync.Domain.Models.Extraction;
 using SigmabotSync.Domain.Ports;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -39,8 +39,12 @@ namespace SigmabotSync.Application.FileExtraction
         private int _countOmittedAlreadyExists;
         private int _countErrors;
 
+        /// <summary>Contadores del último <see cref="ProcessAllPagesAsync"/> completado.</summary>
+        public FileExtractionResumen LastRunSummary { get; private set; }
+
         public event Action<int, int> OnProgress;
-        public event Action<string> OnStatus;
+        /// <summary>Estado del worker. Segundo parámetro: 0=Info, 1=Debug.</summary>
+        public event Action<string, int> OnStatus;
 
         private enum FileDownloadResult { Saved, Omitted, Error }
 
@@ -59,27 +63,31 @@ namespace SigmabotSync.Application.FileExtraction
         /// </summary>
         public async Task ProcessAllPagesAsync()
         {
+            Action<string, int> log = (msg, nivel) => OnStatus?.Invoke(msg, nivel);
+
             try
             {
-                OnStatus?.Invoke("Obteniendo información de páginas...");
+                SyncLog.Info(log, "Obteniendo información de páginas...");
 
                 // Obtener primera página para conocer el total
-                var firstPage = await GetPageAsync(1);
-                
+                var firstPage = await GetPageAsync(1, log);
+
                 if (firstPage == null)
                 {
-                    OnStatus?.Invoke("No se pudo obtener la primera página");
+                    SyncLog.Info(log, "No se pudo obtener la primera página");
+                    LastRunSummary = BuildRunSummary(0);
                     return;
                 }
 
                 int totalPages = firstPage.totalNumberOfPages;
                 long totalDocuments = firstPage.totalResultsCount;
 
-                OnStatus?.Invoke($"Total de documentos: {totalDocuments} en {totalPages} páginas");
+                SyncLog.Info(log, $"Total de documentos: {totalDocuments} en {totalPages} páginas");
 
                 if (totalPages == 0)
                 {
-                    OnStatus?.Invoke("No hay documentos para procesar");
+                    SyncLog.Info(log, "No hay documentos para procesar");
+                    LastRunSummary = BuildRunSummary(0);
                     return;
                 }
 
@@ -93,11 +101,11 @@ namespace SigmabotSync.Application.FileExtraction
 
                 for (int page = 1; page <= totalPages; page++)
                 {
-                    OnStatus?.Invoke($"Procesando página {page} de {totalPages}...");
+                    SyncLog.Debug(log, $"Procesando página {page} de {totalPages}...");
 
-                    Rootobject pageData = page == 1 
-                        ? firstPage 
-                        : await GetPageAsync(page);
+                    Rootobject pageData = page == 1
+                        ? firstPage
+                        : await GetPageAsync(page, log);
 
                     if (pageData != null && pageData.searchResults != null)
                     {
@@ -110,7 +118,7 @@ namespace SigmabotSync.Application.FileExtraction
                             await semaphore.WaitAsync();
                             try
                             {
-                                await ProcessDocumentAsync(doc);
+                                await ProcessDocumentAsync(doc, log);
                             }
                             finally
                             {
@@ -122,18 +130,25 @@ namespace SigmabotSync.Application.FileExtraction
                         processedPages++;
                     }
 
-                    int progress = (int)((page * 100) / totalPages);
                     OnProgress?.Invoke(page, totalPages);
                 }
 
-                OnStatus?.Invoke($"Proceso completado: {processedPages} páginas, {processedDocuments} documentos procesados");
                 int totalOmitted = _countOmittedNoDocument + _countOmittedAlreadyExists;
-                Utilities.Wlog($"FileExtraction resumen: Total procesados={processedDocuments}, Guardados={_countSaved}, Omitidos={totalOmitted} (sin documento/archivo={_countOmittedNoDocument}, ya existían={_countOmittedAlreadyExists}), Errores={_countErrors}", 0);
+                string projectFolder = string.IsNullOrWhiteSpace(_config.ProjectName) ? _config.ProjectId : _config.ProjectName;
+                projectFolder = string.Join("_", (projectFolder ?? "").Split(Path.GetInvalidFileNameChars()));
+                string destinoArchivos = Path.Combine(_config.BasePath ?? "", projectFolder);
+
+                SyncLog.Info(log,
+                    $"Completado: páginas={processedPages}, procesados={processedDocuments}, " +
+                    $"guardados={_countSaved}, errores={_countErrors}, " +
+                    $"omitidos={totalOmitted} (sin archivo={_countOmittedNoDocument}, ya existían={_countOmittedAlreadyExists})");
+                SyncLog.Info(log,
+                    $"Destino archivos: {destinoArchivos}  (subcarpetas TipoDocumento\\DocNo\\Version)");
+                LastRunSummary = BuildRunSummary(processedDocuments);
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"FileExtraction: ERROR en ProcessAllPagesAsync: {ex.Message}", 0);
-                OnStatus?.Invoke($"Error: {ex.Message}");
+                SyncLog.Info(log, $"ERROR en ProcessAllPagesAsync: {TruncateForLog(ex.Message, 300)}");
                 throw;
             }
         }
@@ -141,7 +156,7 @@ namespace SigmabotSync.Application.FileExtraction
         /// <summary>
         /// Obtiene una página específica de documentos
         /// </summary>
-        private async Task<Rootobject> GetPageAsync(int pageNumber)
+        private async Task<Rootobject> GetPageAsync(int pageNumber, Action<string, int> log)
         {
             string baseUrl = string.IsNullOrWhiteSpace(_config.AconexBaseUrl) ? "https://us1.aconex.com" : _config.AconexBaseUrl.TrimEnd('/');
 
@@ -177,7 +192,7 @@ namespace SigmabotSync.Application.FileExtraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"FileExtraction: ERROR en GetPageAsync página {pageNumber}: {ex.Message}", 0);
+                SyncLog.Info(log, $"ERROR en GetPageAsync página {pageNumber}: {TruncateForLog(ex.Message, 300)}");
                 throw;
             }
         }
@@ -185,15 +200,16 @@ namespace SigmabotSync.Application.FileExtraction
         /// <summary>
         /// Procesa un documento individual y descarga su archivo. Devuelve el resultado para el resumen.
         /// </summary>
-        private async Task<FileDownloadResult> ProcessDocumentAsync(Searchresult document)
+        private async Task<FileDownloadResult> ProcessDocumentAsync(Searchresult document, Action<string, int> log)
         {
             try
             {
-                return await DownloadDocumentFileAsync(document);
+                return await DownloadDocumentFileAsync(document, log);
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"FileExtraction: ERROR procesando documento {document.Id}: {ex.Message}", 0);
+                string docNo = document?.DocumentNumber ?? "?";
+                SyncLog.Info(log, $"ERROR DocNo={docNo} Id={document?.Id}: {TruncateForLog(ex.Message, 160)}");
                 Interlocked.Increment(ref _countErrors);
                 return FileDownloadResult.Error;
             }
@@ -202,19 +218,20 @@ namespace SigmabotSync.Application.FileExtraction
         /// <summary>
         /// Descarga el archivo de un documento desde Aconex. Devuelve Saved, Omitted o Error (errores se registran en log).
         /// </summary>
-        private async Task<FileDownloadResult> DownloadDocumentFileAsync(Searchresult document)
+        private async Task<FileDownloadResult> DownloadDocumentFileAsync(Searchresult document, Action<string, int> log)
         {
+            string documentId = document.Id.ToString();
+            string documentNumber = document.DocumentNumber ?? "?";
             try
             {
-                string documentId = document.Id.ToString();
                 string version = document.GetDynamicValue("versionNumber") ?? "0";
-                string documentNumber = document.DocumentNumber ?? "";
                 string documentType = GetProjectFieldValue(document, "TipoDeDocumento_singleSelect");
 
                 string filenameFromMeta = document.GetDynamicValue("filename")?.ToString();
                 if (string.IsNullOrWhiteSpace(filenameFromMeta))
                 {
                     Interlocked.Increment(ref _countOmittedNoDocument);
+                    SyncLog.Debug(log, $"DocNo={documentNumber} Id={documentId}: omitido (sin filename)");
                     return FileDownloadResult.Omitted;
                 }
 
@@ -241,6 +258,7 @@ namespace SigmabotSync.Application.FileExtraction
                 if (File.Exists(filePath))
                 {
                     Interlocked.Increment(ref _countOmittedAlreadyExists);
+                    SyncLog.Debug(log, $"DocNo={documentNumber} Id={documentId}: omitido (ya existía) {fileName}");
                     return FileDownloadResult.Omitted;
                 }
 
@@ -260,31 +278,60 @@ namespace SigmabotSync.Application.FileExtraction
                 {
                     case AconexRegisterDocumentDownloadStatus.Saved:
                         Interlocked.Increment(ref _countSaved);
+                        SyncLog.Debug(log, $"OK DocNo={documentNumber} Id={documentId} archivo={fileName}");
                         return FileDownloadResult.Saved;
                     case AconexRegisterDocumentDownloadStatus.OmittedEmptyDocument:
                         Interlocked.Increment(ref _countOmittedNoDocument);
+                        SyncLog.Debug(log, $"DocNo={documentNumber} Id={documentId}: omitido (documento vacío)");
                         return FileDownloadResult.Omitted;
                     default:
-                        if (!string.IsNullOrEmpty(result.Message))
-                        {
-                            if (result.Message.IndexOf("Timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                result.Message.IndexOf("cancelación", StringComparison.OrdinalIgnoreCase) >= 0)
-                                Utilities.Wlog($"FileExtraction: Timeout o cancelación al descargar documento {document.Id} (DocNo={document.DocumentNumber}). Se omite y se continúa.", 0);
-                            else
-                                Utilities.Wlog($"FileExtraction: ERROR descargando archivo del documento {document.Id}: {result.Message}", 0);
-                        }
-                        else
-                            Utilities.Wlog($"FileExtraction: ERROR descargando archivo del documento {document.Id}", 0);
+                        string motivo = FormatShortDownloadError(result.Message);
+                        SyncLog.Info(log, $"ERROR DocNo={documentNumber} Id={documentId}: {motivo}");
+                        SyncLog.Debug(log, $"Detalle error DocNo={documentNumber} Id={documentId}: {result.Message ?? result.Status.ToString()}");
                         Interlocked.Increment(ref _countErrors);
                         return FileDownloadResult.Error;
                 }
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"FileExtraction: ERROR descargando archivo del documento {document.Id}: {ex.Message}", 0);
+                SyncLog.Info(log, $"ERROR DocNo={documentNumber} Id={documentId}: {TruncateForLog(ex.Message, 160)}");
                 Interlocked.Increment(ref _countErrors);
                 return FileDownloadResult.Error;
             }
+        }
+
+        private static string FormatShortDownloadError(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return "error de descarga";
+            if (message.IndexOf("Timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("cancelación", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("canceled", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "timeout/cancelación";
+            if (message.IndexOf("CANNOT_DOWNLOAD_EMPTY_DOCUMENT", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "documento vacío";
+            return TruncateForLog(message, 160);
+        }
+
+        private FileExtractionResumen BuildRunSummary(long totalProcesados)
+        {
+            int totalOmitted = _countOmittedNoDocument + _countOmittedAlreadyExists;
+            return new FileExtractionResumen
+            {
+                TotalProcesados = totalProcesados,
+                Guardados = _countSaved,
+                Omitidos = totalOmitted,
+                OmitidosSinDocumento = _countOmittedNoDocument,
+                OmitidosYaExistian = _countOmittedAlreadyExists,
+                Errores = _countErrors
+            };
+        }
+
+        private static string TruncateForLog(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= max)
+                return text ?? "";
+            return text.Substring(0, max) + "...";
         }
 
         /// <summary>

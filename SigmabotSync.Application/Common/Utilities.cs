@@ -34,18 +34,11 @@ namespace SigmabotSync.Application.Common
             return Convert.ToBase64String(bytes);
         }
 
-        /// <summary>Escribe en el archivo de log (si está configurado) y en consola. Un solo punto de salida para mensajes.</summary>
+        /// <summary>Escribe en consola/archivo si <paramref name="nivel"/> &lt;= nivel configurado (Info=0, Debug=2).</summary>
         public static void Wlog(string texto, int nivel)
         {
-            try
-            {
-                if (!string.IsNullOrEmpty(AppState.LogFile))
-                    File.AppendAllText(AppState.LogFile, texto + Environment.NewLine);
-            }
-            catch (Exception)
-            {
-                // Intencionalmente vacío
-            }
+            if (nivel > LogLevelConfig.MaxNivelVerbose)
+                return;
             try
             {
                 System.Console.WriteLine(texto);
@@ -54,6 +47,14 @@ namespace SigmabotSync.Application.Common
             {
                 // Consola no disponible (ej. ejecución desde scheduler sin ventana)
             }
+        }
+
+        /// <summary>Recorta mensajes largos para el log Info (evita dumps SQL/stack en descarga).</summary>
+        public static string TruncateForLog(string text, int max = 200)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= max)
+                return text ?? "";
+            return text.Substring(0, max) + "...";
         }
 
         public static T EjecutarConReintentos<T>(Func<T> accion, string contexto, int maxRetries = 3)

@@ -1,8 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace SigmabotSync.Application.Common
 {
@@ -26,5 +23,37 @@ namespace SigmabotSync.Application.Common
         public static long totalCorreosEnviadosDescartados;
         public static long totalCorreosRecibidosAconex;
         public static long totalCorreosEnviadosAconex;
+
+        /// <summary>Errores por ítem/etapa absorbidos (no detienen FullExtraction).</summary>
+        public static int erroresDocumentos;
+        public static int erroresCorreos;
+        public static int erroresFlujos;
+
+        public static void IncErroresDocumentos() => Interlocked.Increment(ref erroresDocumentos);
+        public static void IncErroresCorreos() => Interlocked.Increment(ref erroresCorreos);
+        public static void IncErroresFlujos() => Interlocked.Increment(ref erroresFlujos);
+
+        /// <summary>Pone a cero contadores de extracción (FullExtraction / DocumentExtraction embebido).</summary>
+        public static void ResetExtractionCounters()
+        {
+            TotDoctosAconex = 0;
+            totDoctosDescar = 0;
+            totFlujosAconex = 0;
+            totPasosFlujosDescar = 0;
+            totFlujosDescar = 0;
+            totPasosFlujosAconex = 0;
+            totIncAconex = 0;
+            totalobs = 0;
+            totIncDescar = 0;
+            totalCorreosRecibidosProcesados = 0;
+            totalCorreosEnviadosProcesados = 0;
+            totalCorreosRecibidosDescartados = 0;
+            totalCorreosEnviadosDescartados = 0;
+            totalCorreosRecibidosAconex = 0;
+            totalCorreosEnviadosAconex = 0;
+            erroresDocumentos = 0;
+            erroresCorreos = 0;
+            erroresFlujos = 0;
+        }
     }
 }

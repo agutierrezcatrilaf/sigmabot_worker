@@ -2,6 +2,7 @@ using SigmabotSync.Application.Common;
 using SigmabotSync.Domain.Config;
 using SigmabotSync.Domain.Configuration;
 using SigmabotSync.Domain.Entities;
+using SigmabotSync.Domain.Execution;
 using SigmabotSync.Domain.Ports;
 using System;
 using System.Collections.Generic;
@@ -45,7 +46,10 @@ namespace SigmabotSync.Application.FileExtraction
         private readonly IAconexRegisterWritePort _registerWritePort;
 
         public event Action<int, int> OnProgress;
-        public event Action<string> OnStatus;
+        public event Action<string, int> OnStatus;
+
+        /// <summary>Contadores del último <see cref="RunAsync"/> completado.</summary>
+        public FileUploadResumen LastRunSummary { get; private set; }
 
         public FileUploadWithMetadataWorker(
             TrabajoConfiguracion trabajoConfig,
@@ -59,6 +63,13 @@ namespace SigmabotSync.Application.FileExtraction
             _registerWritePort = registerWritePort ?? throw new ArgumentNullException(nameof(registerWritePort));
             _aconexConfig = FileExtractionConfig.FromCredencial(credAconex, trabajoConfig.IdProyecto ?? "", null);
         }
+
+        /// <summary>Alias temporales de columnas DataLake (ej. FWP en BD → PWP en Aconex). Quitar al alinear nombres en BD.</summary>
+        private static readonly IReadOnlyDictionary<string, string[]> DataLakeColumnAliases =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["PWP"] = new[] { "FWP" },
+            };
 
         /// <summary>Columnas de proyecto DataLake → elemento XML <c>*_singleSelect</c> en Register Document.</summary>
         private static readonly (string ColumnaMetadata, string XmlSingleSelect)[] DataLakeProjectFieldMap =
@@ -103,11 +114,14 @@ namespace SigmabotSync.Application.FileExtraction
                     + FileUploadWithMetadataDefaults.TablaPaths + ".");
             }
 
-            OnStatus?.Invoke($"Leyendo {tablaMetadata} + {tablaPaths}...");
+            Action<string, int> log = (msg, nivel) => OnStatus?.Invoke(msg, nivel);
+
+            SyncLog.Info(log, $"Leyendo {tablaMetadata} + {tablaPaths}...");
             DataTable metadata = LeerMetadataConPaths(connectionStringBd, tablaMetadata, tablaPaths);
             if (metadata == null || metadata.Rows.Count == 0)
             {
-                OnStatus?.Invoke("No hay registros en la tabla de metadata.");
+                SyncLog.Info(log, "No hay registros en la tabla de metadata.");
+                LastRunSummary = new FileUploadResumen();
                 return;
             }
 
@@ -127,23 +141,26 @@ namespace SigmabotSync.Application.FileExtraction
             int procesados = 0;
             int enviados = 0;
             int omitidosYaProcesados = 0;
+            int errores = 0;
 
-            OnStatus?.Invoke($"Procesando {total} registro(s) de metadata...");
+            SyncLog.Info(log, $"Procesando {total} registro(s) de metadata...");
 
-            OnStatus?.Invoke("Obteniendo schema Register Document desde Aconex...");
-            AconexRegisterSchemaSnapshot registerSchema = await ObtenerSchemaRegistroAconexAsync();
+            SyncLog.Debug(log, "Obteniendo schema Register Document desde Aconex...");
+            AconexRegisterSchemaSnapshot registerSchema = await ObtenerSchemaRegistroAconexAsync(log);
 
-            OnStatus?.Invoke("Cargando TiposDocumentos y EstatusDocumentos en memoria...");
+            SyncLog.Debug(log, "Cargando TiposDocumentos y EstatusDocumentos en memoria...");
             (IReadOnlyDictionary<string, string> mapTipos, IReadOnlyDictionary<string, string> mapEstatus) =
-                CargarMapasTiposYEstatusDocumentos(connectionStringBd);
+                CargarMapasTiposYEstatusDocumentos(connectionStringBd, log);
 
             for (int i = 0; i < metadata.Rows.Count; i++)
             {
                 DataRow row = metadata.Rows[i];
+                string metaId = GetMetadataIdForLog(row, columnaId);
+
                 if (FilaYaProcesada(row, metadata.Columns, columnaProcesado))
                 {
                     string refArchivo = ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo);
-                    Utilities.Wlog($"FileUploadWithMetadata: Fila {i + 1} ya procesada (Procesado=1), se omite. Ref={refArchivo}", 1);
+                    SyncLog.Debug(log, $"Id={metaId} ya procesado (Procesado=1), se omite. Ref={refArchivo}");
                     omitidosYaProcesados++;
                     procesados++;
                     OnProgress?.Invoke(procesados, total);
@@ -151,26 +168,34 @@ namespace SigmabotSync.Application.FileExtraction
                 }
 
                 string filePath = ResolverRutaArchivoDesdePathFisico(row, metadata.Columns, columnaRutaArchivo);
-                string refNom = ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo);
+                string archivo = !string.IsNullOrEmpty(filePath)
+                    ? Path.GetFileName(filePath)
+                    : Path.GetFileName(ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo) ?? "") ?? "?";
+                if (string.IsNullOrWhiteSpace(archivo))
+                    archivo = "?";
 
                 if (string.IsNullOrEmpty(filePath))
                 {
-                    string msgArchivo = $"Fila {i + 1}, ref={refNom}: archivo no encontrado.";
-                    Utilities.Wlog($"FileUploadWithMetadata: {msgArchivo}", 1);
-                    throw new InvalidOperationException(msgArchivo);
+                    errores++;
+                    SyncLog.Info(log, $"ERROR Id={metaId} archivo={archivo}: archivo no encontrado");
+                    procesados++;
+                    OnProgress?.Invoke(procesados, total);
+                    continue;
                 }
 
                 try
                 {
-                    await EnviarDocumentoAconexAsync(filePath, row, metadata.Columns, registerSchema, mapTipos, mapEstatus);
+                    string documentId = await EnviarDocumentoAconexAsync(
+                        filePath, row, metadata.Columns, registerSchema, mapTipos, mapEstatus, log);
                     enviados++;
                     AcumularFilaProcesadaParaUpdate(row, columnaId, idsProcesadosExitosamente);
-                    OnStatus?.Invoke($"Enviado: {Path.GetFileName(filePath)}");
+                    SyncLog.Info(log, $"OK Id={metaId} archivo={archivo} → DocumentId={documentId ?? "?"}");
                 }
                 catch (Exception ex)
                 {
-                    Utilities.Wlog($"FileUploadWithMetadata: Error enviando ref={refNom}: {ex.Message}", 0);
-                    throw;
+                    errores++;
+                    SyncLog.Info(log, $"ERROR Id={metaId} archivo={archivo}: {FormatShortUploadError(ex)}");
+                    SyncLog.Debug(log, $"Detalle error Id={metaId}: {ex.Message}");
                 }
 
                 procesados++;
@@ -182,9 +207,18 @@ namespace SigmabotSync.Application.FileExtraction
                 tablaMetadata,
                 columnaProcesado,
                 columnaId,
-                idsProcesadosExitosamente);
+                idsProcesadosExitosamente,
+                log);
 
-            OnStatus?.Invoke($"Completado: {enviados} enviado(s), {omitidosYaProcesados} omitido(s) ya procesado(s), {marcados} marcado(s) con Procesado=1.");
+            SyncLog.Info(log,
+                $"Completado: {enviados} enviado(s), {errores} error(es), {omitidosYaProcesados} ya procesado(s), {marcados} marcado(s) con Procesado=1.");
+            LastRunSummary = new FileUploadResumen
+            {
+                Enviados = enviados,
+                OmitidosYaProcesados = omitidosYaProcesados,
+                Marcados = marcados,
+                Errores = errores
+            };
         }
 
         /// <summary>JOIN metadata + paths: una fila por archivo a subir.</summary>
@@ -257,7 +291,7 @@ namespace SigmabotSync.Application.FileExtraction
         /// Carga en memoria <c>Nombre</c> → <c>idTipo</c> / <c>idEstatus</c> (una sola lectura por ejecución del trabajo).
         /// </summary>
         private static (IReadOnlyDictionary<string, string> IdTipoPorNombre, IReadOnlyDictionary<string, string> IdEstatusPorNombre)
-            CargarMapasTiposYEstatusDocumentos(string connectionString)
+            CargarMapasTiposYEstatusDocumentos(string connectionString, Action<string, int> log)
         {
             var tipos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var estatus = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -285,7 +319,7 @@ namespace SigmabotSync.Application.FileExtraction
                 }
                 catch (SqlException ex)
                 {
-                    Utilities.Wlog($"FileUploadWithMetadata: TiposDocumentos no disponible en BD ({ex.Message}); se usará solo schema Aconex.", 1);
+                    SyncLog.Debug(log, $"TiposDocumentos no disponible en BD ({ex.Message}); se usará solo schema Aconex.");
                 }
 
                 try
@@ -306,7 +340,7 @@ namespace SigmabotSync.Application.FileExtraction
                 }
                 catch (SqlException ex)
                 {
-                    Utilities.Wlog($"FileUploadWithMetadata: EstatusDocumentos no disponible en BD ({ex.Message}); se usará solo schema Aconex.", 1);
+                    SyncLog.Debug(log, $"EstatusDocumentos no disponible en BD ({ex.Message}); se usará solo schema Aconex.");
                 }
             }
 
@@ -397,13 +431,14 @@ namespace SigmabotSync.Application.FileExtraction
             string nombreTabla,
             string columnaProcesado,
             string columnaId,
-            IReadOnlyList<string> idsProcesadosExitosamente)
+            IReadOnlyList<string> idsProcesadosExitosamente,
+            Action<string, int> log)
         {
             if (string.IsNullOrWhiteSpace(connectionString) || string.IsNullOrWhiteSpace(nombreTabla))
                 return 0;
             if (string.IsNullOrWhiteSpace(columnaProcesado))
             {
-                Utilities.Wlog("FileUploadWithMetadata: no existe columna Procesado en metadata, no se pudo marcar Procesado=1.", 1);
+                SyncLog.Debug(log, "No existe columna Procesado en metadata, no se pudo marcar Procesado=1.");
                 return 0;
             }
 
@@ -494,7 +529,7 @@ namespace SigmabotSync.Application.FileExtraction
         /// <summary>
         /// GET <c>/api/projects/{{projectId}}/register/schema</c>: campos de creación según configuración del proyecto.
         /// </summary>
-        private async Task<AconexRegisterSchemaSnapshot> ObtenerSchemaRegistroAconexAsync()
+        private async Task<AconexRegisterSchemaSnapshot> ObtenerSchemaRegistroAconexAsync(Action<string, int> log)
         {
             string projectId = _trabajoConfig.IdProyecto ?? _aconexConfig.ProjectId ?? "";
             if (string.IsNullOrWhiteSpace(projectId))
@@ -514,7 +549,7 @@ namespace SigmabotSync.Application.FileExtraction
             }
             catch (InvalidOperationException ex)
             {
-                Utilities.Wlog($"FileUploadWithMetadata: GET register/schema falló. {ex.Message}", 0);
+                SyncLog.Info(log, $"GET register/schema falló. {ex.Message}");
                 throw;
             }
 
@@ -532,13 +567,14 @@ namespace SigmabotSync.Application.FileExtraction
         /// Envía el archivo y la metadata a Aconex mediante el API Register Document (multipart/mixed: XML + archivo base64).
         /// Ver: https://help.aconex.com/apis/api-guide-documents/#Register-Document
         /// </summary>
-        private async Task EnviarDocumentoAconexAsync(
+        private async Task<string> EnviarDocumentoAconexAsync(
             string filePath,
             DataRow metadataRow,
             DataColumnCollection columnas,
             AconexRegisterSchemaSnapshot registerSchema,
             IReadOnlyDictionary<string, string> idTipoPorNombre,
-            IReadOnlyDictionary<string, string> idEstatusPorNombre)
+            IReadOnlyDictionary<string, string> idEstatusPorNombre,
+            Action<string, int> log)
         {
             FileUploadWithMetadataBody body = BuildBodyMetadata(filePath, metadataRow, columnas);
             string projectId = _trabajoConfig.IdProyecto ?? _aconexConfig.ProjectId ?? "";
@@ -547,10 +583,17 @@ namespace SigmabotSync.Application.FileExtraction
 
             string xmlDocument = BuildAconexRegisterXml(
                 metadataRow, columnas, body.FileName, registerSchema, idTipoPorNombre, idEstatusPorNombre);
-            Utilities.Wlog("FileUploadWithMetadata: XML Register Document (cuerpo multipart 1): " + xmlDocument, 1);
+            SyncLog.Debug(log, "XML Register Document (cuerpo multipart 1): " + xmlDocument);
 
             string boundary = AconexRegisterMultipart.ExampleBoundary;
             string fileName = Path.GetFileName(filePath) ?? body.FileName;
+            long fileSize = new FileInfo(filePath).Length;
+            string refArchivo = GetValueFromRow(metadataRow, columnas, "PathFisico") ?? fileName;
+            if (fileSize >= AconexRegisterMultipart.StreamingUploadThresholdBytes)
+                SyncLog.Debug(log,
+                    $"Subiendo archivo {fileName}: {fileSize} bytes (streaming). Ref={refArchivo}");
+            else
+                SyncLog.Debug(log, $"Subiendo archivo {fileName} ({fileSize} bytes). Ref={refArchivo}");
 
             string baseUrl = string.IsNullOrWhiteSpace(_aconexConfig.AconexBaseUrl) ? "https://us1.aconex.com" : _aconexConfig.AconexBaseUrl.TrimEnd('/');
 
@@ -569,10 +612,9 @@ namespace SigmabotSync.Application.FileExtraction
 
             if (!raw.IsSuccessStatusCode)
             {
-                Utilities.Wlog($"FileUploadWithMetadata: Register Document falló. Status={raw.StatusCode}, Response={responseText}", 0);
+                SyncLog.Debug(log, $"Register Document falló. Status={raw.StatusCode}, Response={TruncateForLog(responseText, 400)}");
                 if (ResponseIndicatesFieldValueAlreadyExists(responseText))
                 {
-                    string refArchivo = GetValueFromRow(metadataRow, columnas, "PathFisico") ?? Path.GetFileName(filePath) ?? "";
                     throw new InvalidOperationException(
                         "Aconex indica FIELD_VALUE_ALREADY_EXISTS (p. ej. documento o valor único ya existente). " +
                         "Register Document solo crea documentos nuevos. Opciones: excluir esa fila si ya se cargó, " +
@@ -583,10 +625,92 @@ namespace SigmabotSync.Application.FileExtraction
                 throw new InvalidOperationException(FormatAconexRegisterFailureMessage(raw.StatusCode, responseText));
             }
 
-            string documentId = ParseRegisterDocumentResponse(responseText);
-            string logArchivo = GetValueFromRow(metadataRow, columnas, "PathFisico") ?? Path.GetFileName(filePath) ?? "";
-            Utilities.Wlog($"FileUploadWithMetadata: Documento registrado. PathFisico={logArchivo}, DocumentId={documentId}", 1);
-            OnStatus?.Invoke($"Registrado en Aconex: {body.FileName} (Id={documentId})");
+            return ParseRegisterDocumentResponse(responseText);
+        }
+
+        private static string GetMetadataIdForLog(DataRow row, string columnaId)
+        {
+            if (row == null || string.IsNullOrWhiteSpace(columnaId))
+                return "?";
+            try
+            {
+                object o = row[columnaId];
+                if (o == null || o == DBNull.Value)
+                    return "?";
+                string s = o.ToString()?.Trim();
+                return string.IsNullOrEmpty(s) ? "?" : s;
+            }
+            catch
+            {
+                return "?";
+            }
+        }
+
+        /// <summary>Motivo corto para log Info (sin XML ni rutas largas).</summary>
+        private static string FormatShortUploadError(Exception ex)
+        {
+            string msg = ex?.Message ?? "error desconocido";
+
+            if (msg.IndexOf("FIELD_VALUE_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "documento ya existe (FIELD_VALUE_ALREADY_EXISTS)";
+
+            if (TryParseMissingMandatoryField(msg, out string mandatoryField))
+                return "falta campo obligatorio " + StripSingleSelectSuffix(mandatoryField);
+
+            if (TryParseInvalidFieldValue(msg, out string invalidField))
+                return "valor inválido " + StripSingleSelectSuffix(invalidField);
+
+            if (msg.IndexOf("archivo no encontrado", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "archivo no encontrado";
+
+            // Quitar XML embebido si quedó en el mensaje
+            int xmlIdx = msg.IndexOf("<?xml", StringComparison.OrdinalIgnoreCase);
+            if (xmlIdx > 0)
+                msg = msg.Substring(0, xmlIdx).Trim().TrimEnd('.', ' ');
+
+            return TruncateForLog(msg, 160);
+        }
+
+        private static string StripSingleSelectSuffix(string field)
+        {
+            if (string.IsNullOrWhiteSpace(field))
+                return field ?? "";
+            const string suffix = "_singleSelect";
+            if (field.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                return field.Substring(0, field.Length - suffix.Length);
+            return field.Trim();
+        }
+
+        private static bool TryParseInvalidFieldValue(string text, out string fieldName)
+        {
+            fieldName = null;
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            const string marker = "not valid for field ";
+            int idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                return false;
+
+            int start = idx + marker.Length;
+            int end = start;
+            while (end < text.Length)
+            {
+                char c = text[end];
+                if (c == '<' || c == '"' || c == '\'' || c == '\r' || c == '\n' || c == '.')
+                    break;
+                end++;
+            }
+
+            fieldName = text.Substring(start, end - start).Trim();
+            return !string.IsNullOrWhiteSpace(fieldName);
+        }
+
+        private static string TruncateForLog(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= max)
+                return text ?? "";
+            return text.Substring(0, max) + "...";
         }
 
         /// <summary>
@@ -897,6 +1021,15 @@ namespace SigmabotSync.Application.FileExtraction
             {
                 string fromMapped = GetValueFromRow(row, columnas, dataLakeColumn);
                 if (!string.IsNullOrWhiteSpace(fromMapped)) return fromMapped.Trim();
+
+                if (DataLakeColumnAliases.TryGetValue(dataLakeColumn, out string[] aliases))
+                {
+                    foreach (string alias in aliases)
+                    {
+                        string fromAlias = GetValueFromRow(row, columnas, alias);
+                        if (!string.IsNullOrWhiteSpace(fromAlias)) return fromAlias.Trim();
+                    }
+                }
             }
 
             return GetValueFromRow(row, columnas, xmlSingleSelect);

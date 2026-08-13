@@ -2,5 +2,9 @@
   "DatabaseConnectionString": "Server=SERVIDOR;Database=sigmabot;User Id=USUARIO;Password=CLAVE;",
   "Credenciales": {
     "EncryptionKey": "MISMA_CLAVE_BASE64_32_BYTES_QUE_API"
+  },
+  "Logging": {
+    "Directory": "Logs",
+    "Level": "Info"
   }
 }

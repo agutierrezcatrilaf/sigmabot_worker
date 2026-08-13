@@ -25,6 +25,9 @@ namespace SigmabotSync.Domain.Config
         /// <summary>Cifrado de claves en tabla Credenciales (misma EncryptionKey que la API).</summary>
         public CredencialesSettings Credenciales { get; set; }
 
+        /// <summary>Directorio de log diario (opcional).</summary>
+        public LoggingSettings Logging { get; set; }
+
         [Obsolete("Las credenciales Aconex se obtienen de la tabla Credenciales (Tipo=Aconex). Se mantiene por compatibilidad.")]
         public string UserAconex { get; set; }
         [Obsolete("Las credenciales Aconex se obtienen de la tabla Credenciales (Tipo=Aconex). Se mantiene por compatibilidad.")]

@@ -104,6 +104,10 @@ namespace SigmabotSync.Infrastructure.Services
                                     if (int.TryParse(valor, out int diasLookback) && diasLookback > 0)
                                         result.DiasLookbackTransmittal = diasLookback;
                                     break;
+                                case "DiasLookbackCorreos":
+                                    if (int.TryParse(valor, out int diasLookbackCorreos) && diasLookbackCorreos > 0)
+                                        result.DiasLookbackCorreos = diasLookbackCorreos;
+                                    break;
                                 case "CodigoProyectoSalfa":
                                     result.CodigoProyectoSalfa = valor;
                                     break;

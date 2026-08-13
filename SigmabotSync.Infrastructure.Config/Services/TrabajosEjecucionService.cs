@@ -117,7 +117,8 @@ namespace SigmabotSync.Infrastructure.Services
             bool exito,
             string mensajeError,
             IReadOnlyList<string> etapasEjecutadas,
-            string detalleEjecucion = null)
+            string detalleEjecucion = null,
+            string rutaLog = null)
         {
             var etapas = etapasEjecutadas != null && etapasEjecutadas.Count > 0
                 ? string.Join(",", etapasEjecutadas)
@@ -126,7 +127,8 @@ namespace SigmabotSync.Infrastructure.Services
             const string sql = @"
                 UPDATE [dbo].[TrabajosEjecucion]
                 SET FechaHoraFin = @FechaHoraFin, Exito = @Exito, MensajeError = @MensajeError,
-                    EtapasEjecutadas = @EtapasEjecutadas, DetalleEjecucion = @DetalleEjecucion
+                    EtapasEjecutadas = @EtapasEjecutadas, DetalleEjecucion = @DetalleEjecucion,
+                    RutaLog = @RutaLog
                 WHERE Id = @Id";
 
             using (var cn = new SqlConnection(_connectionString))
@@ -140,6 +142,7 @@ namespace SigmabotSync.Infrastructure.Services
                     cmd.Parameters.AddWithValue("@MensajeError", (object)mensajeError ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@EtapasEjecutadas", (object)etapas ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@DetalleEjecucion", (object)detalleEjecucion ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@RutaLog", (object)rutaLog ?? DBNull.Value);
                     cmd.ExecuteNonQuery();
                 }
             }
@@ -157,7 +160,7 @@ namespace SigmabotSync.Infrastructure.Services
 
             const string sql = @"
                 SELECT Id, IdTrabajo, FechaHoraInicio, FechaHoraFin, Exito, MensajeError,
-                       EtapasEjecutadas, DetalleEjecucion, TipoEjecucion
+                       EtapasEjecutadas, DetalleEjecucion, TipoEjecucion, RutaLog
                 FROM [dbo].[TrabajosEjecucion] WITH (NOLOCK)
                 WHERE IdTrabajo = @IdTrabajo
                 ORDER BY FechaHoraInicio DESC
@@ -203,8 +206,22 @@ namespace SigmabotSync.Infrastructure.Services
                     : rdr.GetString(rdr.GetOrdinal("DetalleEjecucion")),
                 TipoEjecucion = rdr.IsDBNull(rdr.GetOrdinal("TipoEjecucion"))
                     ? null
-                    : rdr.GetString(rdr.GetOrdinal("TipoEjecucion"))
+                    : rdr.GetString(rdr.GetOrdinal("TipoEjecucion")),
+                RutaLog = LeerColumnaOpcional(rdr, "RutaLog")
             };
+        }
+
+        private static string LeerColumnaOpcional(SqlDataReader rdr, string columnName)
+        {
+            try
+            {
+                int ord = rdr.GetOrdinal(columnName);
+                return rdr.IsDBNull(ord) ? null : rdr.GetString(ord);
+            }
+            catch (IndexOutOfRangeException)
+            {
+                return null;
+            }
         }
 
         /// <summary>

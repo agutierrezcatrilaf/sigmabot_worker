@@ -30,6 +30,9 @@ namespace SigmabotSync.Domain.Entities
         /// <summary>Días hacia atrás para buscar transmitals en inbox (TrabajosConfiguracion Nombre=DiasLookbackTransmittal). Default 30.</summary>
         public int? DiasLookbackTransmittal { get; set; }
 
+        /// <summary>Días hacia atrás para buscar correos en FullExtraction (TrabajosConfiguracion Nombre=DiasLookbackCorreos). Default 30.</summary>
+        public int? DiasLookbackCorreos { get; set; }
+
         /// <summary>Código proyecto SALFA para nomenclatura docno (TrabajosConfiguracion Nombre=CodigoProyectoSalfa). Ej. 10031671.</summary>
         public string CodigoProyectoSalfa { get; set; }
 
@@ -123,6 +126,13 @@ namespace SigmabotSync.Domain.Entities
         {
             if (DiasLookbackTransmittal.HasValue && DiasLookbackTransmittal.Value > 0)
                 return DiasLookbackTransmittal.Value;
+            return 30;
+        }
+
+        public int ResolverDiasLookbackCorreos()
+        {
+            if (DiasLookbackCorreos.HasValue && DiasLookbackCorreos.Value > 0)
+                return DiasLookbackCorreos.Value;
             return 30;
         }
 
