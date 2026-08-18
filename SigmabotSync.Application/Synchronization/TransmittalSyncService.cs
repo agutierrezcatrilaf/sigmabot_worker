@@ -207,6 +207,7 @@ namespace SigmabotSync.Application.Synchronization
                         SyncLog.Debug(log, $"  [Prueba ProjectSync] límite {maxDocsThisPass} documento(s) en esta pasada.");
 
                     bool stopPassAfterLimit = false;
+                    bool mailHadFailure = false;
                     foreach (var attachment in detail.Attachments)
                     {
                         if (maxDocsThisPass > 0 && docsProcessedThisPass >= maxDocsThisPass)
@@ -218,17 +219,26 @@ namespace SigmabotSync.Application.Synchronization
                             break;
                         }
 
+                        SyncAttachmentOutcome outcome;
                         if (attachment.IsPlaceholder)
                         {
-                            bool ok = await TryRegisterPlaceholderAsync(
+                            outcome = await TryRegisterPlaceholderAsync(
                                 request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, mail.MailId, mailHints, log, cancellationToken).ConfigureAwait(false);
-                            if (ok) result.PlaceholdersCreated++;
+                            if (outcome == SyncAttachmentOutcome.Applied)
+                                result.PlaceholdersCreated++;
                         }
                         else
                         {
-                            bool ok = await TryApplyFileFromTransmittalAsync(
+                            outcome = await TryApplyFileFromTransmittalAsync(
                                 request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, mail.MailId, mailHints, log, cancellationToken).ConfigureAwait(false);
-                            if (ok) result.FilesApplied++;
+                            if (outcome == SyncAttachmentOutcome.Applied)
+                                result.FilesApplied++;
+                        }
+
+                        if (outcome == SyncAttachmentOutcome.Failed)
+                        {
+                            mailHadFailure = true;
+                            result.Errors++;
                         }
 
                         docsProcessedThisPass++;
@@ -236,6 +246,13 @@ namespace SigmabotSync.Application.Synchronization
 
                     if (stopPassAfterLimit)
                         break;
+
+                    if (mailHadFailure)
+                    {
+                        SyncLog.Info(log, 
+                            $"Mail {mail.MailNo} no se marca como procesado: hay adjuntos con error (se reintentará).");
+                        continue;
+                    }
 
                     await _state.MarkMailProcessedAsync(request.IdTrabajo, sourceProject.ProjectId, mail.MailId, cancellationToken).ConfigureAwait(false);
                     result.ProcessedMails++;
@@ -476,7 +493,7 @@ namespace SigmabotSync.Application.Synchronization
             return hints.TryGetValue(key.Trim(), out string v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : null;
         }
 
-        private async Task<bool> TryRegisterPlaceholderAsync(
+        private async Task<SyncAttachmentOutcome> TryRegisterPlaceholderAsync(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem sourceProject,
             ProyectoSyncItem targetProject,
@@ -492,13 +509,13 @@ namespace SigmabotSync.Application.Synchronization
             if (string.IsNullOrWhiteSpace(attachment.DocumentNo))
             {
                 SyncLog.Info(log, "Marcador omitido: DocumentNo vacío.");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             string revision = string.IsNullOrWhiteSpace(attachment.Revision) ? "A" : attachment.Revision.Trim();
             if (await IsSourceAttachmentAlreadySyncedAsync(
                 request, sourceProject, attachment, revision, log, cancellationToken).ConfigureAwait(false))
-                return false;
+                return SyncAttachmentOutcome.Skipped;
 
             IReadOnlyDictionary<string, string> sourceHints = await FetchSourceDocumentHintsAsync(
                 request, sourceProject, attachment, revision, fieldMappings, mailHints, log, cancellationToken,
@@ -509,7 +526,7 @@ namespace SigmabotSync.Application.Synchronization
             if (string.IsNullOrWhiteSpace(mappingKey))
             {
                 SyncLog.Info(log, $"Marcador omitido ({attachment.DocumentNo}): sin clave de documento destino.");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             string codelcoBridgeKey = IsLado2Source(request, sourceProject) ? null : attachment.DocumentNo?.Trim();
@@ -526,13 +543,13 @@ namespace SigmabotSync.Application.Synchronization
                     request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
                     attachment, revision, destDocNoForLog, existing.DocumentId, fileName: null, filePath: null, hasFile: false,
                     mailHints, sourceHints, existing.RegisterHints, mailId, log, cancellationToken).ConfigureAwait(false);
-                return superseded;
+                return superseded ? SyncAttachmentOutcome.Applied : SyncAttachmentOutcome.Failed;
             }
 
             string xml = await BuildRegisterXmlAsync(
                 request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, revision, false, mailHints, sourceHints, log, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(xml))
-                return false;
+                return SyncAttachmentOutcome.Failed;
 
             string boundary = AconexRegisterMultipart.CreateBoundary();
             string body = AconexRegisterMultipart.BuildRegisterBodyXmlOnly(xml, boundary);
@@ -553,14 +570,14 @@ namespace SigmabotSync.Application.Synchronization
             if (response == null || !response.IsSuccessStatusCode)
             {
                 SyncLog.Info(log, $"Register marcador falló ({mappingKey}): {Truncate(responseText, 300)}");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             string localDocumentId = AconexRegisterResponseParser.ParseRegisterDocumentId(responseText);
             if (string.IsNullOrWhiteSpace(localDocumentId))
             {
                 SyncLog.Debug(log, $"Register marcador sin DocumentId en respuesta ({mappingKey}).");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             string assignedDocNo = ResolveAssignedDocumentNumber(responseText, null);
@@ -573,10 +590,10 @@ namespace SigmabotSync.Application.Synchronization
 
             SyncLog.Debug(log, 
                 $"Marcador creado en destino: Codelco {mappingKey} → Salfa {assignedDocNo ?? "?"} rev {revision} → {localDocumentId}");
-            return true;
+            return SyncAttachmentOutcome.Applied;
         }
 
-        private async Task<bool> TryApplyFileFromTransmittalAsync(
+        private async Task<SyncAttachmentOutcome> TryApplyFileFromTransmittalAsync(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem sourceProject,
             ProyectoSyncItem targetProject,
@@ -592,19 +609,19 @@ namespace SigmabotSync.Application.Synchronization
             if (string.IsNullOrWhiteSpace(attachment.DocumentNo))
             {
                 SyncLog.Info(log, "Archivo omitido: DocumentNo vacío.");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             string revision = string.IsNullOrWhiteSpace(attachment.Revision) ? "A" : attachment.Revision.Trim();
             if (await IsSourceAttachmentAlreadySyncedAsync(
                 request, sourceProject, attachment, revision, log, cancellationToken).ConfigureAwait(false))
-                return false;
+                return SyncAttachmentOutcome.Skipped;
 
             string sourceDocumentId = ResolveSourceDocumentId(attachment);
             if (string.IsNullOrWhiteSpace(sourceDocumentId))
             {
                 SyncLog.Info(log, $"Archivo omitido ({attachment.DocumentNo}): sin DocumentId/RegisteredAs en transmittal.");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             IReadOnlyDictionary<string, string> sourceHints = await FetchSourceDocumentHintsAsync(
@@ -616,7 +633,7 @@ namespace SigmabotSync.Application.Synchronization
             if (string.IsNullOrWhiteSpace(mappingKey))
             {
                 SyncLog.Info(log, $"Archivo omitido ({attachment.DocumentNo}): sin clave de documento destino.");
-                return false;
+                return SyncAttachmentOutcome.Failed;
             }
 
             string codelcoBridgeKey = IsLado2Source(request, sourceProject) ? null : attachment.DocumentNo?.Trim();
@@ -637,32 +654,34 @@ namespace SigmabotSync.Application.Synchronization
                 if (download.Status == AconexRegisterDocumentDownloadStatus.OmittedEmptyDocument)
                 {
                     SyncLog.Info(log, $"Descarga vacía ({attachment.DocumentNo}): documento sin archivo en registro origen.");
-                    return false;
+                    return SyncAttachmentOutcome.Failed;
                 }
 
                 if (download.Status != AconexRegisterDocumentDownloadStatus.Saved || !File.Exists(tempFile))
                 {
                     SyncLog.Info(log, $"Descarga falló ({attachment.DocumentNo}): {download.Message ?? download.Status.ToString()}");
-                    return false;
+                    return SyncAttachmentOutcome.Failed;
                 }
 
                 string fileName = string.IsNullOrWhiteSpace(attachment.FileName) ? attachment.DocumentNo + ".bin" : attachment.FileName;
 
                 if (existing == null || string.IsNullOrWhiteSpace(existing.DocumentId))
                 {
-                    return await RegisterWithFileAsync(
+                    bool registered = await RegisterWithFileAsync(
                         request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
                         attachment, revision, mappingKey, fileName, tempFile, mailId, mailHints, sourceHints, log, cancellationToken).ConfigureAwait(false);
+                    return registered ? SyncAttachmentOutcome.Applied : SyncAttachmentOutcome.Failed;
                 }
 
                 string destDocNoForLog = ResolveSupersedeDestinationDocumentNo(existing, mappingKey);
                 SyncLog.Info(log, 
                     $"Supersede con archivo en {targetProject.Label}: {destDocNoForLog} " +
                     $"rev {existing.Revision ?? "?"} → {revision} (id={existing.DocumentId})");
-                return await SupersedeDocumentAsync(
+                bool superseded = await SupersedeDocumentAsync(
                     request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
                     attachment, revision, destDocNoForLog, existing.DocumentId, fileName, tempFile, hasFile: true,
                     mailHints, sourceHints, existing.RegisterHints, mailId, log, cancellationToken).ConfigureAwait(false);
+                return superseded ? SyncAttachmentOutcome.Applied : SyncAttachmentOutcome.Failed;
             }
             finally
             {
@@ -776,7 +795,8 @@ namespace SigmabotSync.Application.Synchronization
             IReadOnlyDictionary<string, string> preloadedTargetHints,
             string mailId,
             Action<string, int> log,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool allowNonCurrentRetry = true)
         {
             string xml = await BuildRegisterXmlAsync(
                 request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, revision, hasFile, mailHints, sourceHints, log,
@@ -830,6 +850,26 @@ namespace SigmabotSync.Application.Synchronization
             string responseText = response?.Body ?? "";
             if (response == null || !response.IsSuccessStatusCode)
             {
+                if (allowNonCurrentRetry && ResponseIndicatesCannotSupersedeNonCurrent(responseText))
+                {
+                    string codelcoBridgeKey = IsLado2Source(request, sourceProject) ? null : attachment.DocumentNo?.Trim();
+                    TargetDocumentLookup current = await LookupCurrentTargetDocumentInRegisterAsync(
+                        request, targetProject, targetSchema, destinationDocumentNo, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false);
+                    if (current != null
+                        && !string.IsNullOrWhiteSpace(current.DocumentId)
+                        && !string.Equals(current.DocumentId.Trim(), localDocumentId?.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        SyncLog.Info(log, 
+                            $"Supersede: {localDocumentId} no es vigente; reintento con versión actual {current.DocumentId}.");
+                        string currentDocNo = ResolveSupersedeDestinationDocumentNo(current, destinationDocumentNo);
+                        return await SupersedeDocumentAsync(
+                            request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
+                            attachment, revision, currentDocNo, current.DocumentId, fileName, filePath, hasFile,
+                            mailHints, sourceHints, current.RegisterHints, mailId, log, cancellationToken,
+                            allowNonCurrentRetry: false).ConfigureAwait(false);
+                    }
+                }
+
                 SyncLog.Info(log, 
                     $"Supersede falló en destino ({destinationDocumentNo} → {localDocumentId}" +
                     $"{(hasFile ? "" : ", marcador")}): {Truncate(responseText, 300)}");
@@ -859,6 +899,13 @@ namespace SigmabotSync.Application.Synchronization
             public string Revision { get; set; }
             public string VersionNumber { get; set; }
             public IReadOnlyDictionary<string, string> RegisterHints { get; set; }
+        }
+
+        private enum SyncAttachmentOutcome
+        {
+            Applied,
+            Skipped,
+            Failed
         }
 
         private static string ResolveAttachmentVersion(TransmittalDocumentAttachment attachment)
@@ -954,8 +1001,10 @@ namespace SigmabotSync.Application.Synchronization
         }
 
         /// <summary>
-        /// Busca documento en destino: mapeo local BD → register/search por <see cref="CodelcoBridgeField"/> (ida)
-        /// → register/search por docno (vuelta SALFA→Codelco).
+        /// Busca documento vigente en destino: register/search por <see cref="CodelcoBridgeField"/> (ida)
+        /// → register/search por docno (vuelta) → mapeo local BD solo si Aconex no devuelve versión actual.
+        /// El supersede de Aconex exige el DocumentId de la versión current, no un id histórico
+        /// (p. ej. misma revisión B aprobada otra vez).
         /// </summary>
         private async Task<TargetDocumentLookup> ResolveTargetDocumentWithHintsAsync(
             TransmittalSyncRunRequest request,
@@ -967,13 +1016,35 @@ namespace SigmabotSync.Application.Synchronization
             Action<string, int> log,
             CancellationToken cancellationToken)
         {
+            TargetDocumentLookup live = await LookupCurrentTargetDocumentInRegisterAsync(
+                request, targetProject, targetSchema, documentNo, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false);
+            if (live != null && !string.IsNullOrWhiteSpace(live.DocumentId))
+            {
+                if (!string.IsNullOrWhiteSpace(documentNo))
+                {
+                    string localDocumentId = await TryGetLocalTargetDocumentIdAsync(
+                        request, targetProject.ProjectId, documentNo.Trim(), revision, cancellationToken).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(localDocumentId)
+                        && !string.Equals(localDocumentId.Trim(), live.DocumentId.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        SyncLog.Info(log, 
+                            $"  Mapeo local desactualizado (id={localDocumentId}); " +
+                            $"se usa versión vigente id={live.DocumentId} rev={live.Revision ?? "?"}.");
+                    }
+                }
+
+                return await FinalizeRecoveredTargetDocumentAsync(
+                    request, targetProject, documentNo, revision, live, log, cancellationToken).ConfigureAwait(false);
+            }
+
             if (!string.IsNullOrWhiteSpace(documentNo))
             {
                 string localDocumentId = await TryGetLocalTargetDocumentIdAsync(
                     request, targetProject.ProjectId, documentNo.Trim(), revision, cancellationToken).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(localDocumentId))
                 {
-                    SyncLog.Debug(log, $"  Mapeo local BD: docno={documentNo.Trim()} rev={revision} → {localDocumentId}");
+                    SyncLog.Info(log, 
+                        $"  Mapeo local BD (sin match vigente en register): docno={documentNo.Trim()} rev={revision} → {localDocumentId}");
                     return new TargetDocumentLookup
                     {
                         DocumentId = localDocumentId,
@@ -983,6 +1054,19 @@ namespace SigmabotSync.Application.Synchronization
                 }
             }
 
+            return null;
+        }
+
+        private async Task<TargetDocumentLookup> LookupCurrentTargetDocumentInRegisterAsync(
+            TransmittalSyncRunRequest request,
+            ProyectoSyncItem targetProject,
+            AconexRegisterSchemaSnapshot targetSchema,
+            string documentNo,
+            string revision,
+            string codelcoBridgeKey,
+            Action<string, int> log,
+            CancellationToken cancellationToken)
+        {
             if (!string.IsNullOrWhiteSpace(codelcoBridgeKey))
             {
                 TargetDocumentLookup fromBridge = await LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
@@ -991,8 +1075,7 @@ namespace SigmabotSync.Application.Synchronization
                 {
                     SyncLog.Debug(log, 
                         $"  Register destino: encontrado por {CodelcoBridgeField}={codelcoBridgeKey.Trim()} → {fromBridge.DocumentId}");
-                    return await FinalizeRecoveredTargetDocumentAsync(
-                        request, targetProject, documentNo, revision, fromBridge, log, cancellationToken).ConfigureAwait(false);
+                    return fromBridge;
                 }
             }
 
@@ -1004,8 +1087,7 @@ namespace SigmabotSync.Application.Synchronization
                 {
                     SyncLog.Info(log, 
                         $"  Register destino: encontrado por docno={documentNo.Trim()} rev={fromRegister.Revision ?? "?"} → {fromRegister.DocumentId}");
-                    return await FinalizeRecoveredTargetDocumentAsync(
-                        request, targetProject, documentNo, revision, fromRegister, log, cancellationToken).ConfigureAwait(false);
+                    return fromRegister;
                 }
             }
 
@@ -1238,7 +1320,7 @@ namespace SigmabotSync.Application.Synchronization
             if (page.searchResults.Count > 1)
                 SyncLog.Debug(log, 
                     $"  Register destino: {page.searchResults.Count} documento(s) con {CodelcoBridgeField}={codelcoBridgeKey.Trim()} " +
-                    "(se selecciona uno según revisión).");
+                    "(se selecciona la versión vigente).");
 
             Searchresult match = SelectTargetRegisterSearchMatchByCodelcoBridge(
                 page.searchResults, codelcoBridgeKey, revision);
@@ -1288,14 +1370,7 @@ namespace SigmabotSync.Application.Synchronization
             if (byDocNo.Count == 0)
                 return null;
 
-            Searchresult match = byDocNo.FirstOrDefault(r =>
-                IsWildcardRevision(revision) ||
-                string.Equals(NormalizeRevision(r.Revision), NormalizeRevision(revision), StringComparison.OrdinalIgnoreCase));
-
-            if (match == null)
-                match = byDocNo.FirstOrDefault(r => RevisionsEqual(r.Revision, revision));
-
-            return match ?? byDocNo[0];
+            return SelectCurrentVersionSearchMatch(byDocNo, revision);
         }
 
         private static Searchresult SelectTargetRegisterSearchMatchByCodelcoBridge(
@@ -1316,14 +1391,74 @@ namespace SigmabotSync.Application.Synchronization
             if (byBridge.Count == 0)
                 return null;
 
-            Searchresult match = byBridge.FirstOrDefault(r =>
-                IsWildcardRevision(revision) ||
-                string.Equals(NormalizeRevision(r.Revision), NormalizeRevision(revision), StringComparison.OrdinalIgnoreCase));
+            return SelectCurrentVersionSearchMatch(byBridge, revision);
+        }
 
-            if (match == null)
-                match = byBridge.FirstOrDefault(r => RevisionsEqual(r.Revision, revision));
+        /// <summary>
+        /// El supersede de Aconex solo acepta la versión current. Misma revisión (B→B) genera un DocumentId nuevo;
+        /// no se debe elegir un id histórico aunque coincida la letra de revisión.
+        /// </summary>
+        private static Searchresult SelectCurrentVersionSearchMatch(
+            IReadOnlyList<Searchresult> candidates,
+            string preferredRevision)
+        {
+            if (candidates == null || candidates.Count == 0)
+                return null;
+            if (candidates.Count == 1)
+                return candidates[0];
 
-            return match ?? byBridge[0];
+            Searchresult current = candidates.FirstOrDefault(IsSearchResultCurrent);
+            if (current != null)
+                return current;
+
+            return candidates
+                .OrderByDescending(r => ParseVersionSortKey(GetVersionNumberFromSearchResult(r)))
+                .ThenByDescending(r => RevisionMatchesPreferred(r.Revision, preferredRevision) ? 1 : 0)
+                .ThenByDescending(r => r.Id)
+                .First();
+        }
+
+        private static bool RevisionMatchesPreferred(string revision, string preferredRevision)
+        {
+            if (IsWildcardRevision(preferredRevision))
+                return true;
+            return string.Equals(
+                NormalizeRevision(revision),
+                NormalizeRevision(preferredRevision),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsSearchResultCurrent(Searchresult result)
+        {
+            string flag = result?.GetDynamicValue("current")
+                ?? result?.GetDynamicValue("iscurrent")
+                ?? result?.GetDynamicValue("isCurrent");
+            if (string.IsNullOrWhiteSpace(flag))
+                return false;
+
+            string v = flag.Trim();
+            return v == "1"
+                || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(v, "y", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static decimal ParseVersionSortKey(string versionNumber)
+        {
+            if (string.IsNullOrWhiteSpace(versionNumber))
+                return decimal.MinValue;
+
+            string s = versionNumber.Trim();
+            int i = 0;
+            while (i < s.Length && (char.IsDigit(s[i]) || s[i] == '.'))
+                i++;
+            if (i == 0)
+                return decimal.MinValue;
+
+            decimal n;
+            if (decimal.TryParse(s.Substring(0, i), NumberStyles.Number, CultureInfo.InvariantCulture, out n))
+                return n;
+            return decimal.MinValue;
         }
 
         private static string GetCodelcoBridgeFromSearchResult(Searchresult result)
@@ -1895,6 +2030,12 @@ namespace SigmabotSync.Application.Synchronization
                 && responseText.IndexOf("FIELD_VALUE_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool ResponseIndicatesCannotSupersedeNonCurrent(string responseText)
+        {
+            return !string.IsNullOrWhiteSpace(responseText)
+                && responseText.IndexOf("CANNOT_SUPERSEDE_NON_CURRENT_DOCUMENT", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private Task<AconexRegisterSearchResult> SearchTargetRegisterByQueryAsync(
             TransmittalSyncRunRequest request,
             string targetProjectId,
@@ -1923,6 +2064,7 @@ namespace SigmabotSync.Application.Synchronization
                 "docno",
                 "revision",
                 "versionnumber",
+                "current",
                 "title",
                 "revisiondate",
                 "doctype",
@@ -1951,6 +2093,7 @@ namespace SigmabotSync.Application.Synchronization
                 "docno",
                 "revision",
                 "versionnumber",
+                "current",
                 "title",
                 "revisiondate",
                 "doctype",
