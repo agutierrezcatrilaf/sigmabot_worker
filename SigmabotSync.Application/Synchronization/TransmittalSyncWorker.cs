@@ -142,7 +142,7 @@ namespace SigmabotSync.Application.Synchronization
 
                         $"Resumen {source.Label} → {target.Label}: procesados={result.ProcessedMails}, " +
 
-                        $"ya_procesados={result.SkippedAlreadyProcessed}, archivos={result.FilesApplied}, errores={result.Errors}",
+                        $"ya_procesados={result.SkippedAlreadyProcessed}, marcadores={result.PlaceholdersCreated}, archivos={result.FilesApplied}, errores={result.Errors}",
 
                         0);
 

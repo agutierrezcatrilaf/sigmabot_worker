@@ -61,8 +61,8 @@ namespace SigmabotSync.Domain.Entities
         public int? CredencialBDId { get; set; }
 
         /// <summary>
-        /// idEstatus fijo al registrar documentos en el proyecto destino (lado 1, ej. Codelco).
-        /// Acepta idEstatus numérico o nombre en EstatusDocumentos. Solo ProjectSync.
+        /// Vuelta SALFA→Codelco: allowlist de idEstatus (CSV) para filtrar adjuntos por Status.
+        /// Ej. 1207959768 = Emitido para Revisión. Vacío = sin filtro. El status escrito sale del adjunto.
         /// </summary>
         public string IdEstatusDocumentoDestino { get; set; }
 

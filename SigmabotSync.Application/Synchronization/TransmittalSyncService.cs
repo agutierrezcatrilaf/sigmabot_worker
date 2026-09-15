@@ -389,6 +389,83 @@ namespace SigmabotSync.Application.Synchronization
         }
 
         /// <summary>
+        /// Vuelta SALFA→Codelco: omite adjuntos cuyo <c>Status</c> no esté en
+        /// <see cref="TransmittalSyncRunRequest.IdEstatusDocumentoDestino"/> (CSV de idEstatus o nombres).
+        /// Vacío = sin filtro. Compara por id resuelto vía <see cref="AconexDocumentCatalogNames.EstatusDocumentos"/>.
+        /// </summary>
+        private static bool ShouldSkipAttachmentByStatusAllowlistForVuelta(
+            TransmittalSyncRunRequest request,
+            ProyectoSyncItem sourceProject,
+            TransmittalDocumentAttachment attachment,
+            AconexDocumentCatalog documentCatalog,
+            Action<string, int> log)
+        {
+            if (!IsLado2Source(request, sourceProject))
+                return false;
+
+            string allowlistRaw = request?.IdEstatusDocumentoDestino?.Trim();
+            if (string.IsNullOrWhiteSpace(allowlistRaw))
+                return false;
+
+            string attachmentStatus = attachment?.Status?.Trim();
+            if (string.IsNullOrWhiteSpace(attachmentStatus))
+            {
+                SyncLog.Info(log,
+                    $"  Omitido (vuelta): adjunto {attachment?.DocumentNo ?? "?"} sin Status en RegisteredDocumentAttachment.");
+                return true;
+            }
+
+            if (AttachmentStatusMatchesAllowlist(attachmentStatus, allowlistRaw, documentCatalog))
+                return false;
+
+            SyncLog.Info(log,
+                $"  Omitido (vuelta): Status «{attachmentStatus}» no está en IdEstatusDocumentoDestino " +
+                $"(allowlist={allowlistRaw}) — {attachment?.DocumentNo ?? "?"}.");
+            return true;
+        }
+
+        private static bool AttachmentStatusMatchesAllowlist(
+            string attachmentStatus,
+            string allowlistCsv,
+            AconexDocumentCatalog documentCatalog)
+        {
+            string attachmentResolved = documentCatalog?.ResolveByCatalog(
+                AconexDocumentCatalogNames.EstatusDocumentos, attachmentStatus)
+                ?? attachmentStatus.Trim();
+
+            foreach (string token in SplitCsvTokens(allowlistCsv))
+            {
+                if (string.IsNullOrWhiteSpace(token))
+                    continue;
+
+                string tokenResolved = documentCatalog?.ResolveByCatalog(
+                    AconexDocumentCatalogNames.EstatusDocumentos, token)
+                    ?? token;
+
+                if (string.Equals(attachmentStatus, token, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(attachmentResolved, tokenResolved, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(attachmentResolved, token, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(attachmentStatus, tokenResolved, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<string> SplitCsvTokens(string csv)
+        {
+            if (string.IsNullOrWhiteSpace(csv))
+                yield break;
+
+            foreach (string part in csv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string trimmed = part.Trim();
+                if (!string.IsNullOrWhiteSpace(trimmed))
+                    yield return trimmed;
+            }
+        }
+
+        /// <summary>
         /// Clave de mapeo local / búsqueda: docno Codelco en ida (AutoNumber); docno destino en vuelta.
         /// </summary>
         private static string ResolveDestinationDocumentKey(
@@ -512,6 +589,10 @@ namespace SigmabotSync.Application.Synchronization
                 return SyncAttachmentOutcome.Failed;
             }
 
+            if (ShouldSkipAttachmentByStatusAllowlistForVuelta(
+                    request, sourceProject, attachment, documentCatalog, log))
+                return SyncAttachmentOutcome.Skipped;
+
             string revision = string.IsNullOrWhiteSpace(attachment.Revision) ? "A" : attachment.Revision.Trim();
             if (await IsSourceAttachmentAlreadySyncedAsync(
                 request, sourceProject, attachment, revision, log, cancellationToken).ConfigureAwait(false))
@@ -611,6 +692,10 @@ namespace SigmabotSync.Application.Synchronization
                 SyncLog.Info(log, "Archivo omitido: DocumentNo vacío.");
                 return SyncAttachmentOutcome.Failed;
             }
+
+            if (ShouldSkipAttachmentByStatusAllowlistForVuelta(
+                    request, sourceProject, attachment, documentCatalog, log))
+                return SyncAttachmentOutcome.Skipped;
 
             string revision = string.IsNullOrWhiteSpace(attachment.Revision) ? "A" : attachment.Revision.Trim();
             if (await IsSourceAttachmentAlreadySyncedAsync(
@@ -1571,6 +1656,8 @@ namespace SigmabotSync.Application.Synchronization
                 }
             }
 
+            // Allowlist de filtro en vuelta (IdEstatusDocumentoDestino). Si la matriz aún usa
+            // ParametroIdEstatusDestino, este valor también alimenta el XML; con Adjunto/Status no se fuerza.
             string fixedDocumentStatusId = ResolveFixedDocumentStatus(
                 request, targetProject, documentCatalog, log);
 

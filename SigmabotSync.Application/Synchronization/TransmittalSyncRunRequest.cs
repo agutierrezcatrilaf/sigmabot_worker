@@ -14,10 +14,13 @@ namespace SigmabotSync.Application.Synchronization
         public int DiasLookback { get; set; } = 30;
         public IReadOnlyList<ProyectoSyncItem> Proyectos { get; set; }
 
-        /// <summary>idEstatus o nombre en EstatusDocumentos para forzar al registrar en <see cref="IdProyectoEstatusFijo"/>.</summary>
+        /// <summary>
+        /// Allowlist de status en vuelta SALFA→Codelco (CSV de idEstatus, ej. 1207959768).
+        /// Vacío = sin filtro. El status escrito en Codelco sale del Status del adjunto.
+        /// </summary>
         public string IdEstatusDocumentoDestino { get; set; }
 
-        /// <summary>Proyecto Aconex donde aplica el estatus fijo (default: lado 1 / IdProyecto).</summary>
+        /// <summary>Proyecto Aconex usado al resolver idEstatus de allowlist/parámetro (default: lado 1 / IdProyecto).</summary>
         public string IdProyectoEstatusFijo { get; set; }
 
         /// <summary>Vuelta SALFA→Codelco: Subject debe contener este texto (vacío = sin filtro).</summary>

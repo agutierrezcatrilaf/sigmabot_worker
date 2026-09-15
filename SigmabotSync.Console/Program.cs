@@ -597,7 +597,7 @@ namespace SigmabotSync.Console
             SigmabotSync.Application.Common.Utilities.Wlog($"  DiasLookbackTransmittal={diasLookback}", 0);
             if (!string.IsNullOrWhiteSpace(trabajoConfig.IdEstatusDocumentoDestino))
                 SigmabotSync.Application.Common.Utilities.Wlog(
-                    $"  IdEstatusDocumentoDestino={trabajoConfig.IdEstatusDocumentoDestino.Trim()} (proyecto destino {trabajoConfig.IdProyecto})", 0);
+                    $"  IdEstatusDocumentoDestino={trabajoConfig.IdEstatusDocumentoDestino.Trim()} (allowlist status vuelta; idEstatus)", 0);
             if (!string.IsNullOrWhiteSpace(trabajoConfig.SubjectFiltroTransmittalVuelta))
                 SigmabotSync.Application.Common.Utilities.Wlog(
                     $"  SubjectFiltroTransmittalVuelta={trabajoConfig.SubjectFiltroTransmittalVuelta.Trim()}", 0);

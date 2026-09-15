@@ -42,7 +42,7 @@ VALUES
 (@IdTrabajo, @Salfa, @Codelco, 'Title',          'CampoOrigen', 'Title',                       1, NULL, NULL,                20, 1),
 (@IdTrabajo, @Salfa, @Codelco, 'Revision',       'Adjunto',     'Revision',                    1, NULL, NULL,                30, 1),
 (@IdTrabajo, @Salfa, @Codelco, 'doctype',        'CampoOrigen', 'DocumentTypeId',              0, NULL, 'TiposDocumentos',   40, 1),
-(@IdTrabajo, @Salfa, @Codelco, 'statusid',       'ParametroIdEstatusDestino', NULL,            0, NULL, 'EstatusDocumentos', 50, 1),
+(@IdTrabajo, @Salfa, @Codelco, 'statusid',       'Adjunto',     'Status',                0, NULL, 'EstatusDocumentos', 50, 1),
 (@IdTrabajo, @Salfa, @Codelco, 'author',         'CampoOrigen', 'Author',                      0, NULL, NULL,                60, 1),
 (@IdTrabajo, @Salfa, @Codelco, 'revisiondate',   'CampoOrigen', 'RevisionDate',                0, NULL, NULL,                70, 1),
 -- Solo supersede read (antes en CamposConsultaRegistroDestino CSV)

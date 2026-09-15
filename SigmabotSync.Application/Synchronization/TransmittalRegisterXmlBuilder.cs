@@ -286,7 +286,11 @@ namespace SigmabotSync.Application.Synchronization
 
             merged["Revision"] = string.IsNullOrWhiteSpace(revision) ? "A" : revision.Trim();
             merged["HasFile"] = hasFile ? "true" : "false";
-            if (!string.IsNullOrWhiteSpace(fixedDocumentStatusId))
+            // Status destino: si la matriz mapea statusid desde adjunto/origen, ya está en merged.
+            // fixedDocumentStatusId solo aplica cuando el mapeo usa @IdEstatusDocumentoDestino.
+            if (!string.IsNullOrWhiteSpace(fixedDocumentStatusId)
+                && !merged.ContainsKey("statusid")
+                && !merged.ContainsKey("DocumentStatusId"))
             {
                 merged["DocumentStatusId"] = fixedDocumentStatusId.Trim();
                 merged["statusid"] = fixedDocumentStatusId.Trim();

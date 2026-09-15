@@ -55,11 +55,10 @@ namespace SigmabotSync.Domain.Configuration
 
             new TrabajoConfiguracionCampoDefinicion(
                 TrabajosConfiguracionKeyNames.IdEstatusDocumentoDestino,
-                "Estatus documento destino (idEstatus, Codelco)",
+                "Estatus permitidos (vuelta a Codelco)",
                 tiposDondeVisible: new[] { TipoTrabajoIds.ProjectSync },
                 tiposDondeObligatorio: Array.Empty<string>(),
-                ayuda: "idEstatus al supersede en Codelco (ej. 1207959768). En matriz destino Codelco, fila statusid: Tipo fuente = " +
-                        ProjectSyncCampoDestinoTipoFuente.ParametroIdEstatusDestino + "."),
+                ayuda: "Solo sincroniza a Codelco adjuntos con este estatus (ej. 1207959768 = Emitido para Revisión). Si hay más de uno, sepáralos con coma. Si lo dejas vacío, no filtra por estatus."),
 
             new TrabajoConfiguracionCampoDefinicion(
                 TrabajosConfiguracionKeyNames.SubjectFiltroTransmittalVuelta,
