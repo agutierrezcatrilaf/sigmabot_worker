@@ -146,7 +146,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{datos actuales}}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo leer los documentos ya guardados", ex?.Message);
                 AppState.IncErroresDocumentos();
             }
         }
@@ -170,7 +170,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{GetACXDocuments}}: {_config["NombrePrj"]} ({projectID}) Mensaje: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo obtener los documentos desde Aconex", ex?.Message);
                 AppState.IncErroresDocumentos();
             }
         }
@@ -239,7 +239,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo guardar los documentos en la base", ex?.Message);
                 AppState.IncErroresDocumentos();
             }
 
@@ -303,7 +303,7 @@ namespace SigmabotSync.Application.Extraction
                                         }
                                         catch (Exception ex)
                                         {
-                                            Utilities.Wlog($"Documentos: ERROR al procesar doc {doc.Id} en proyecto {projid}, p�gina {currentPage}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                                            ReadableLog.Documento(doc?.DocumentNumber, doc?.Id.ToString(), "no se pudo guardar el documento", ex?.Message);
                                             AppState.IncErroresDocumentos();
                                         }
                                     }
@@ -313,7 +313,7 @@ namespace SigmabotSync.Application.Extraction
                         }
                         catch (Exception ex)
                         {
-                            Utilities.Wlog($"Documentos: ERROR al obtener la p�gina {currentPage} del proyecto {projid}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                            ReadableLog.Error("no se pudo obtener la página " + currentPage + " de documentos", ex?.Message);
                             AppState.IncErroresDocumentos();
                         }
                         finally
@@ -330,7 +330,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR general en proyecto {projid}: {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo extraer los documentos", ex?.Message);
                 AppState.IncErroresDocumentos();
                 return false;
             }
@@ -385,7 +385,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Documentos: ERROR {{AgregaDocumentoNuevo}}:{projectId}:{Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Documento(mdoc?.DocumentNumber, mdoc?.Id.ToString(), "no se pudo guardar el documento", ex?.Message);
                 AppState.IncErroresDocumentos();
             }
         }

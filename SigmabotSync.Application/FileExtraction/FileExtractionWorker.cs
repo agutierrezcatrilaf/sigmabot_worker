@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -65,16 +66,14 @@ namespace SigmabotSync.Application.FileExtraction
         {
             Action<string, int> log = (msg, nivel) => OnStatus?.Invoke(msg, nivel);
 
-            try
-            {
-                SyncLog.Info(log, "Obteniendo información de páginas...");
+            SyncLog.Info(log, "Obteniendo información de páginas...");
 
                 // Obtener primera página para conocer el total
                 var firstPage = await GetPageAsync(1, log);
 
                 if (firstPage == null)
                 {
-                    SyncLog.Info(log, "No se pudo obtener la primera página");
+                    LogErrorTrabajo(log, "no se pudo obtener la página 1 del registro", null);
                     LastRunSummary = BuildRunSummary(0);
                     return;
                 }
@@ -145,12 +144,6 @@ namespace SigmabotSync.Application.FileExtraction
                 SyncLog.Info(log,
                     $"Destino archivos: {destinoArchivos}  (subcarpetas TipoDocumento\\DocNo\\Version)");
                 LastRunSummary = BuildRunSummary(processedDocuments);
-            }
-            catch (Exception ex)
-            {
-                SyncLog.Info(log, $"ERROR en ProcessAllPagesAsync: {TruncateForLog(ex.Message, 300)}");
-                throw;
-            }
         }
 
         /// <summary>
@@ -192,7 +185,7 @@ namespace SigmabotSync.Application.FileExtraction
             }
             catch (Exception ex)
             {
-                SyncLog.Info(log, $"ERROR en GetPageAsync página {pageNumber}: {TruncateForLog(ex.Message, 300)}");
+                LogErrorTrabajo(log, "no se pudo obtener la página " + pageNumber + " del registro", ex?.Message);
                 throw;
             }
         }
@@ -208,8 +201,14 @@ namespace SigmabotSync.Application.FileExtraction
             }
             catch (Exception ex)
             {
-                string docNo = document?.DocumentNumber ?? "?";
-                SyncLog.Info(log, $"ERROR DocNo={docNo} Id={document?.Id}: {TruncateForLog(ex.Message, 160)}");
+                LogErrorDocumento(
+                    log,
+                    document?.DocumentNumber,
+                    document?.Id.ToString(),
+                    null,
+                    "no se pudo descargar el archivo",
+                    null,
+                    ex?.Message);
                 Interlocked.Increment(ref _countErrors);
                 return FileDownloadResult.Error;
             }
@@ -220,8 +219,10 @@ namespace SigmabotSync.Application.FileExtraction
         /// </summary>
         private async Task<FileDownloadResult> DownloadDocumentFileAsync(Searchresult document, Action<string, int> log)
         {
-            string documentId = document.Id.ToString();
-            string documentNumber = document.DocumentNumber ?? "?";
+            string documentId = document?.Id.ToString() ?? "?";
+            string documentNumber = document?.DocumentNumber ?? "?";
+            string fileName = null;
+            string filePath = null;
             try
             {
                 string version = document.GetDynamicValue("versionNumber") ?? "0";
@@ -252,8 +253,8 @@ namespace SigmabotSync.Application.FileExtraction
                     version
                 );
 
-                string fileName = string.Join("_", filenameFromMeta.Split(Path.GetInvalidFileNameChars()));
-                string filePath = Path.Combine(documentPath, fileName);
+                fileName = string.Join("_", filenameFromMeta.Split(Path.GetInvalidFileNameChars()));
+                filePath = Path.Combine(documentPath, fileName);
 
                 if (File.Exists(filePath))
                 {
@@ -285,16 +286,28 @@ namespace SigmabotSync.Application.FileExtraction
                         SyncLog.Debug(log, $"DocNo={documentNumber} Id={documentId}: omitido (documento vacío)");
                         return FileDownloadResult.Omitted;
                     default:
-                        string motivo = FormatShortDownloadError(result.Message);
-                        SyncLog.Info(log, $"ERROR DocNo={documentNumber} Id={documentId}: {motivo}");
-                        SyncLog.Debug(log, $"Detalle error DocNo={documentNumber} Id={documentId}: {result.Message ?? result.Status.ToString()}");
+                        LogErrorDocumento(
+                            log,
+                            documentNumber,
+                            documentId,
+                            fileName,
+                            FormatShortDownloadError(result.Message),
+                            filePath,
+                            result.Message ?? result.Status.ToString());
                         Interlocked.Increment(ref _countErrors);
                         return FileDownloadResult.Error;
                 }
             }
             catch (Exception ex)
             {
-                SyncLog.Info(log, $"ERROR DocNo={documentNumber} Id={documentId}: {TruncateForLog(ex.Message, 160)}");
+                LogErrorDocumento(
+                    log,
+                    documentNumber,
+                    documentId,
+                    fileName,
+                    FormatShortDownloadError(ex?.Message),
+                    filePath,
+                    ex?.Message);
                 Interlocked.Increment(ref _countErrors);
                 return FileDownloadResult.Error;
             }
@@ -303,14 +316,94 @@ namespace SigmabotSync.Application.FileExtraction
         private static string FormatShortDownloadError(string message)
         {
             if (string.IsNullOrWhiteSpace(message))
-                return "error de descarga";
+                return "no se pudo descargar el archivo";
             if (message.IndexOf("Timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("cancelación", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("canceled", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "timeout/cancelación";
+                return "se agotó el tiempo de descarga";
             if (message.IndexOf("CANNOT_DOWNLOAD_EMPTY_DOCUMENT", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "documento vacío";
-            return TruncateForLog(message, 160);
+                return "documento sin archivo en Aconex";
+            if (message.IndexOf("401", StringComparison.Ordinal) >= 0 ||
+                message.IndexOf("403", StringComparison.Ordinal) >= 0 ||
+                message.IndexOf("Unauthorized", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("Forbidden", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "sin autorización para descargar";
+            return "no se pudo descargar el archivo";
+        }
+
+        private static void LogErrorDocumento(
+            Action<string, int> log,
+            string docNo,
+            string documentId,
+            string archivo,
+            string motivo,
+            string ruta,
+            string detalle)
+        {
+            string doc = string.IsNullOrWhiteSpace(docNo) ? "?" : docNo.Trim();
+            string id = string.IsNullOrWhiteSpace(documentId) ? "?" : documentId.Trim();
+            string archivoTxt = string.IsNullOrWhiteSpace(archivo) ? "?" : archivo.Trim();
+            string rutaTxt = string.IsNullOrWhiteSpace(ruta) ? "(sin ruta)" : ruta.Trim();
+            SyncLog.Info(log, $"ERROR DocNo={doc} Id={id} archivo={archivoTxt}: {motivo}. Ruta={rutaTxt}");
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
+        private static void LogErrorTrabajo(Action<string, int> log, string motivo, string detalle)
+        {
+            SyncLog.Info(log, "ERROR: " + motivo);
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
+        private static string ExtraerDetalleParaLog(string message, string motivo)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return null;
+
+            string detalle = LimpiarTextoLog(message);
+            if (string.IsNullOrWhiteSpace(detalle))
+                return null;
+            if (!string.IsNullOrWhiteSpace(motivo)
+                && (string.Equals(detalle, motivo, StringComparison.OrdinalIgnoreCase)
+                    || detalle.StartsWith(motivo, StringComparison.OrdinalIgnoreCase)
+                    || motivo.StartsWith(detalle, StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            return TruncateForLog(detalle, 300);
+        }
+
+        private static string LimpiarTextoLog(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "";
+
+            var sb = new StringBuilder(text.Length);
+            bool inTag = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '<')
+                {
+                    inTag = true;
+                    continue;
+                }
+                if (c == '>')
+                {
+                    inTag = false;
+                    sb.Append(' ');
+                    continue;
+                }
+                if (!inTag)
+                    sb.Append(c);
+            }
+
+            string limpio = sb.ToString().Replace("\r", " ").Replace("\n", " ").Replace("\t", " ");
+            while (limpio.IndexOf("  ", StringComparison.Ordinal) >= 0)
+                limpio = limpio.Replace("  ", " ");
+            return limpio.Trim();
         }
 
         private FileExtractionResumen BuildRunSummary(long totalProcesados)

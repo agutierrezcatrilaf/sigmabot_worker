@@ -197,7 +197,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR {{DatosActuales}}: {_config["NombrePrj"]} ({projid}): {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo leer los correos ya guardados", ex?.Message);
                 AppState.IncErroresCorreos();
             }
         }
@@ -239,7 +239,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR al obtener total de páginas (GetMaxPages): {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo obtener la cantidad de páginas de correos", ex?.Message);
                 AppState.IncErroresCorreos();
                 return 0;
             }
@@ -302,7 +302,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR {{dbUpdateProjectData}}: proyecto: {_config["NombrePrj"]}:{Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo guardar los correos en la base", ex?.Message);
                 AppState.IncErroresCorreos();
             }
             finally
@@ -441,9 +441,12 @@ namespace SigmabotSync.Application.Extraction
                     new ParallelOptions { MaxDegreeOfParallelism = 8 },
                     mdoc =>
                     {
+                        string mailId = null;
+                        string mailNo = null;
                         try
                         {
-                            string mailId = mdoc.GetAttribute("MailId");
+                            mailId = mdoc.GetAttribute("MailId");
+                            mailNo = mdoc.SelectSingleNode("MailNo")?.InnerText;
 
                             // progress bar
                             long tmails;
@@ -479,7 +482,7 @@ namespace SigmabotSync.Application.Extraction
                         }
                         catch (Exception ex)
                         {
-                            Utilities.Wlog($"Correos: ERROR ParallelMail:{projid} - {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                            ReadableLog.Correo(mailNo, mailId, "no se pudo procesar el correo", ex?.Message);
                             AppState.IncErroresCorreos();
                         }
                     });
@@ -488,7 +491,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR ProcesarPagina {mailbox} p�gina {pagina} - {projid} - {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Error("no se pudo leer la página " + pagina + " del buzón " + mailbox, ex?.Message);
                 AppState.IncErroresCorreos();
                 return false;
             }
@@ -538,7 +541,11 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                Utilities.Wlog($"Correos: ERROR ProcesarCorreoSinAdjuntos {projectId} - MailId: {mdoc.GetAttribute("MailId")} - {Utilities.TruncateForLog(ex.Message, 200)}", 0);
+                ReadableLog.Correo(
+                    mdoc?.SelectSingleNode("MailNo")?.InnerText,
+                    mdoc?.GetAttribute("MailId"),
+                    "no se pudo guardar el correo",
+                    ex?.Message);
                 AppState.IncErroresCorreos();
             }
         }

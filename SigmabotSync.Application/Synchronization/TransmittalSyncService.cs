@@ -164,7 +164,10 @@ namespace SigmabotSync.Application.Synchronization
             catch (Exception ex)
             {
                 result.Errors++;
-                SyncLog.Info(log, $"ERROR preparando registro destino {targetProject.ProjectId}: {ex.Message}");
+                LogErrorTrabajo(
+                    log,
+                    "no se pudo preparar el registro destino " + (targetProject.Label ?? targetProject.ProjectId),
+                    ex?.Message);
                 return result;
             }
 
@@ -260,7 +263,7 @@ namespace SigmabotSync.Application.Synchronization
                 catch (Exception ex)
                 {
                     result.Errors++;
-                    SyncLog.Info(log, $"ERROR mail {mail.MailId}: {ex.Message}");
+                    LogErrorMail(log, mail?.MailNo, mail?.MailId, "no se pudo procesar el transmittal", ex?.Message);
                 }
             }
 
@@ -585,7 +588,7 @@ namespace SigmabotSync.Application.Synchronization
         {
             if (string.IsNullOrWhiteSpace(attachment.DocumentNo))
             {
-                SyncLog.Info(log, "Marcador omitido: DocumentNo vacío.");
+                LogErrorDocumento(log, null, null, "el transmittal no trae número de documento");
                 return SyncAttachmentOutcome.Failed;
             }
 
@@ -606,7 +609,7 @@ namespace SigmabotSync.Application.Synchronization
                 request, sourceProject, documentCatalog, fieldMappings, attachment, sourceHints);
             if (string.IsNullOrWhiteSpace(mappingKey))
             {
-                SyncLog.Info(log, $"Marcador omitido ({attachment.DocumentNo}): sin clave de documento destino.");
+                LogErrorDocumento(log, attachment.DocumentNo, attachment.FileName, "no hay número de documento para el destino");
                 return SyncAttachmentOutcome.Failed;
             }
 
@@ -650,7 +653,12 @@ namespace SigmabotSync.Application.Synchronization
             string responseText = response?.Body ?? "";
             if (response == null || !response.IsSuccessStatusCode)
             {
-                SyncLog.Info(log, $"Register marcador falló ({mappingKey}): {Truncate(responseText, 300)}");
+                LogErrorDocumento(
+                    log,
+                    mappingKey,
+                    attachment.FileName,
+                    FormatearMotivoRegistro(responseText, "no se pudo crear el marcador en el destino"),
+                    responseText);
                 return SyncAttachmentOutcome.Failed;
             }
 
@@ -689,7 +697,7 @@ namespace SigmabotSync.Application.Synchronization
         {
             if (string.IsNullOrWhiteSpace(attachment.DocumentNo))
             {
-                SyncLog.Info(log, "Archivo omitido: DocumentNo vacío.");
+                LogErrorDocumento(log, null, null, "el transmittal no trae número de documento");
                 return SyncAttachmentOutcome.Failed;
             }
 
@@ -705,7 +713,7 @@ namespace SigmabotSync.Application.Synchronization
             string sourceDocumentId = ResolveSourceDocumentId(attachment);
             if (string.IsNullOrWhiteSpace(sourceDocumentId))
             {
-                SyncLog.Info(log, $"Archivo omitido ({attachment.DocumentNo}): sin DocumentId/RegisteredAs en transmittal.");
+                LogErrorDocumento(log, attachment.DocumentNo, attachment.FileName, "el transmittal no trae el id del documento en el origen");
                 return SyncAttachmentOutcome.Failed;
             }
 
@@ -717,7 +725,7 @@ namespace SigmabotSync.Application.Synchronization
                 request, sourceProject, documentCatalog, fieldMappings, attachment, sourceHints);
             if (string.IsNullOrWhiteSpace(mappingKey))
             {
-                SyncLog.Info(log, $"Archivo omitido ({attachment.DocumentNo}): sin clave de documento destino.");
+                LogErrorDocumento(log, attachment.DocumentNo, attachment.FileName, "no hay número de documento para el destino");
                 return SyncAttachmentOutcome.Failed;
             }
 
@@ -738,13 +746,18 @@ namespace SigmabotSync.Application.Synchronization
 
                 if (download.Status == AconexRegisterDocumentDownloadStatus.OmittedEmptyDocument)
                 {
-                    SyncLog.Info(log, $"Descarga vacía ({attachment.DocumentNo}): documento sin archivo en registro origen.");
+                    LogErrorDocumento(log, attachment.DocumentNo, attachment.FileName, "documento sin archivo en el origen");
                     return SyncAttachmentOutcome.Failed;
                 }
 
                 if (download.Status != AconexRegisterDocumentDownloadStatus.Saved || !File.Exists(tempFile))
                 {
-                    SyncLog.Info(log, $"Descarga falló ({attachment.DocumentNo}): {download.Message ?? download.Status.ToString()}");
+                    LogErrorDocumento(
+                        log,
+                        attachment.DocumentNo,
+                        attachment.FileName,
+                        "no se pudo descargar el archivo desde el origen",
+                        download.Message ?? download.Status.ToString());
                     return SyncAttachmentOutcome.Failed;
                 }
 
@@ -836,11 +849,21 @@ namespace SigmabotSync.Application.Synchronization
                             mailHints, sourceHints, existing.RegisterHints, mailId, log, cancellationToken).ConfigureAwait(false);
                     }
 
-                    SyncLog.Info(log, 
-                        $"No se pudo resolver DocumentId destino para supersede ({destinationDocumentNo}) tras FIELD_VALUE_ALREADY_EXISTS.");
+                    LogErrorDocumento(
+                        log,
+                        destinationDocumentNo,
+                        fileName,
+                        "el documento ya existe en el destino y no se encontró para crear la revisión",
+                        responseText);
+                    return false;
                 }
 
-                SyncLog.Info(log, $"Register con archivo falló en destino ({destinationDocumentNo}): {Truncate(responseText, 300)}");
+                LogErrorDocumento(
+                    log,
+                    destinationDocumentNo,
+                    fileName,
+                    FormatearMotivoRegistro(responseText, "no se pudo registrar el documento en el destino"),
+                    responseText);
                 return false;
             }
 
@@ -955,9 +978,14 @@ namespace SigmabotSync.Application.Synchronization
                     }
                 }
 
-                SyncLog.Info(log, 
-                    $"Supersede falló en destino ({destinationDocumentNo} → {localDocumentId}" +
-                    $"{(hasFile ? "" : ", marcador")}): {Truncate(responseText, 300)}");
+                LogErrorDocumento(
+                    log,
+                    destinationDocumentNo,
+                    fileName,
+                    FormatearMotivoRegistro(responseText, hasFile
+                        ? "no se pudo crear la nueva revisión en el destino"
+                        : "no se pudo crear la nueva revisión del marcador en el destino"),
+                    responseText);
                 return false;
             }
 
@@ -1294,7 +1322,10 @@ namespace SigmabotSync.Application.Synchronization
                 string aconexMsg = !string.IsNullOrWhiteSpace(searchResult.AconexErrorDescription)
                     ? $"{searchResult.AconexErrorCode}: {searchResult.AconexErrorDescription}"
                     : Truncate(searchResult.ResponseBody, 400);
-                SyncLog.Info(log, $"  Register destino: search error (documentid={documentId}): {aconexMsg}");
+                LogErrorTrabajo(
+                    log,
+                    "no se pudo buscar el documento " + documentId.Trim() + " en el registro destino",
+                    aconexMsg);
                 return null;
             }
 
@@ -1338,7 +1369,7 @@ namespace SigmabotSync.Application.Synchronization
                 string aconexMsg = !string.IsNullOrWhiteSpace(searchResult.AconexErrorDescription)
                     ? $"{searchResult.AconexErrorCode}: {searchResult.AconexErrorDescription}"
                     : Truncate(searchResult.ResponseBody, 400);
-                SyncLog.Info(log, $"  Register destino: search error ({documentNo}): {aconexMsg}");
+                LogErrorDocumento(log, documentNo, null, "no se pudo buscar el documento en el registro destino", aconexMsg);
                 return null;
             }
 
@@ -1391,7 +1422,7 @@ namespace SigmabotSync.Application.Synchronization
                 string aconexMsg = !string.IsNullOrWhiteSpace(searchResult.AconexErrorDescription)
                     ? $"{searchResult.AconexErrorCode}: {searchResult.AconexErrorDescription}"
                     : Truncate(searchResult.ResponseBody, 400);
-                SyncLog.Info(log, $"  Register destino: search error ({CodelcoBridgeField}={codelcoBridgeKey}): {aconexMsg}");
+                LogErrorDocumento(log, codelcoBridgeKey, null, "no se pudo buscar el documento en el registro destino por el código Codelco", aconexMsg);
                 return null;
             }
 
@@ -1720,7 +1751,7 @@ namespace SigmabotSync.Application.Synchronization
 
             if (string.IsNullOrWhiteSpace(xml))
             {
-                SyncLog.Info(log, $"No se pudo armar XML Register ({attachment.DocumentNo}): {error}");
+                LogErrorDocumento(log, attachment.DocumentNo, attachment.FileName, "no se pudo armar el alta en el destino", error);
                 return null;
             }
 
@@ -1906,8 +1937,12 @@ namespace SigmabotSync.Application.Synchronization
                 string aconexMsg = !string.IsNullOrWhiteSpace(searchResult.AconexErrorDescription)
                     ? $"{searchResult.AconexErrorCode}: {searchResult.AconexErrorDescription}"
                     : Truncate(searchResult.ResponseBody, 400);
-                SyncLog.Info(log, 
-                    $"  Register origen: search error HTTP {searchResult.StatusCode} ({attachment.DocumentNo}): {aconexMsg}");
+                LogErrorDocumento(
+                    log,
+                    attachment.DocumentNo,
+                    attachment.FileName,
+                    "no se pudo buscar el documento en el registro origen",
+                    aconexMsg);
                 if (!string.IsNullOrWhiteSpace(searchResult.RequestBody))
                     SyncLog.Debug(log, $"  Register origen search request: {Truncate(searchResult.RequestBody, 600)}");
             }
@@ -2551,6 +2586,146 @@ namespace SigmabotSync.Application.Synchronization
             if (string.IsNullOrEmpty(text) || text.Length <= max)
                 return text ?? "";
             return text.Substring(0, max) + "...";
+        }
+
+        private static void LogErrorTrabajo(Action<string, int> log, string motivo, string detalle)
+        {
+            SyncLog.Info(log, "ERROR: " + motivo);
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
+        private static void LogErrorMail(Action<string, int> log, string mailNo, string mailId, string motivo, string detalle)
+        {
+            string no = string.IsNullOrWhiteSpace(mailNo) ? "?" : mailNo.Trim();
+            string id = string.IsNullOrWhiteSpace(mailId) ? "?" : mailId.Trim();
+            SyncLog.Info(log, $"ERROR Mail={no} Id={id}: {motivo}");
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
+        private static void LogErrorDocumento(
+            Action<string, int> log,
+            string docNo,
+            string archivo,
+            string motivo,
+            string detalle = null)
+        {
+            string doc = string.IsNullOrWhiteSpace(docNo) ? "?" : docNo.Trim();
+            string archivoTxt = string.IsNullOrWhiteSpace(archivo) ? "?" : archivo.Trim();
+            SyncLog.Info(log, $"ERROR DocNo={doc} archivo={archivoTxt}: {motivo}");
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
+        private static string FormatearMotivoRegistro(string responseText, string motivoPorDefecto)
+        {
+            if (string.IsNullOrWhiteSpace(responseText))
+                return motivoPorDefecto;
+            if (responseText.IndexOf("FIELD_VALUE_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "documento ya existe en el destino";
+            if (TryParseCampoObligatorio(responseText, out string obligatorio))
+                return "falta campo obligatorio " + QuitarSufijoSingleSelect(obligatorio);
+            if (TryParseCampoInvalido(responseText, out string invalido))
+                return "valor inválido en " + QuitarSufijoSingleSelect(invalido);
+            return motivoPorDefecto;
+        }
+
+        private static string QuitarSufijoSingleSelect(string field)
+        {
+            if (string.IsNullOrWhiteSpace(field))
+                return field ?? "";
+            const string suffix = "_singleSelect";
+            if (field.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                return field.Substring(0, field.Length - suffix.Length);
+            return field.Trim();
+        }
+
+        private static bool TryParseCampoObligatorio(string text, out string fieldName)
+        {
+            fieldName = null;
+            const string marker = "Mandatory field ";
+            int idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                return false;
+            int start = idx + marker.Length;
+            int end = start;
+            while (end < text.Length)
+            {
+                char c = text[end];
+                if (c == '<' || c == '"' || c == '\'' || c == '\r' || c == '\n' || c == '.' || c == ' ')
+                    break;
+                end++;
+            }
+            fieldName = text.Substring(start, end - start).Trim();
+            return !string.IsNullOrWhiteSpace(fieldName);
+        }
+
+        private static bool TryParseCampoInvalido(string text, out string fieldName)
+        {
+            fieldName = null;
+            const string marker = "not valid for field ";
+            int idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                return false;
+            int start = idx + marker.Length;
+            int end = start;
+            while (end < text.Length)
+            {
+                char c = text[end];
+                if (c == '<' || c == '"' || c == '\'' || c == '\r' || c == '\n' || c == '.')
+                    break;
+                end++;
+            }
+            fieldName = text.Substring(start, end - start).Trim();
+            return !string.IsNullOrWhiteSpace(fieldName);
+        }
+
+        private static string ExtraerDetalleParaLog(string message, string motivo)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return null;
+            string detalle = LimpiarTextoLog(message);
+            if (string.IsNullOrWhiteSpace(detalle))
+                return null;
+            if (!string.IsNullOrWhiteSpace(motivo)
+                && (string.Equals(detalle, motivo, StringComparison.OrdinalIgnoreCase)
+                    || detalle.StartsWith(motivo, StringComparison.OrdinalIgnoreCase)
+                    || motivo.StartsWith(detalle, StringComparison.OrdinalIgnoreCase)))
+                return null;
+            return Truncate(detalle, 300);
+        }
+
+        private static string LimpiarTextoLog(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "";
+            var sb = new StringBuilder(text.Length);
+            bool inTag = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '<')
+                {
+                    inTag = true;
+                    continue;
+                }
+                if (c == '>')
+                {
+                    inTag = false;
+                    sb.Append(' ');
+                    continue;
+                }
+                if (!inTag)
+                    sb.Append(c);
+            }
+            string limpio = sb.ToString().Replace("\r", " ").Replace("\n", " ").Replace("\t", " ");
+            while (limpio.IndexOf("  ", StringComparison.Ordinal) >= 0)
+                limpio = limpio.Replace("  ", " ");
+            return limpio.Trim();
         }
 
         private static void TryDeleteFile(string path)

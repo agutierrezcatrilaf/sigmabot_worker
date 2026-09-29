@@ -177,7 +177,12 @@ namespace SigmabotSync.Application.FileExtraction
                 if (string.IsNullOrEmpty(filePath))
                 {
                     errores++;
-                    SyncLog.Info(log, $"ERROR Id={metaId} archivo={archivo}: archivo no encontrado");
+                    LogErrorDocumento(
+                        log,
+                        metaId,
+                        archivo,
+                        ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo),
+                        "archivo no encontrado");
                     procesados++;
                     OnProgress?.Invoke(procesados, total);
                     continue;
@@ -194,8 +199,8 @@ namespace SigmabotSync.Application.FileExtraction
                 catch (Exception ex)
                 {
                     errores++;
-                    SyncLog.Info(log, $"ERROR Id={metaId} archivo={archivo}: {FormatShortUploadError(ex)}");
-                    SyncLog.Debug(log, $"Detalle error Id={metaId}: {ex.Message}");
+                    string motivo = FormatShortUploadError(ex);
+                    LogErrorDocumento(log, metaId, archivo, filePath, motivo, ex?.Message);
                 }
 
                 procesados++;
@@ -549,7 +554,7 @@ namespace SigmabotSync.Application.FileExtraction
             }
             catch (InvalidOperationException ex)
             {
-                SyncLog.Info(log, $"GET register/schema falló. {ex.Message}");
+                LogErrorTrabajo(log, "no se pudo obtener el schema del registro en Aconex", ex?.Message);
                 throw;
             }
 
@@ -646,19 +651,52 @@ namespace SigmabotSync.Application.FileExtraction
             }
         }
 
+        /// <summary>
+        /// Línea Info del log descargable: identificador, motivo y ruta.
+        /// Si el mensaje trae más contexto (respuesta de Aconex), va en una segunda línea.
+        /// </summary>
+        private static void LogErrorDocumento(
+            Action<string, int> log,
+            string metaId,
+            string archivo,
+            string ruta,
+            string motivo,
+            string detalle = null)
+        {
+            string rutaTxt = string.IsNullOrWhiteSpace(ruta) ? "(sin ruta)" : ruta.Trim();
+            SyncLog.Info(log, $"ERROR Id={metaId} archivo={archivo}: {motivo}. Ruta={rutaTxt}");
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
+        private static void LogErrorTrabajo(Action<string, int> log, string motivo, string detalle)
+        {
+            SyncLog.Info(log, "ERROR: " + motivo);
+            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            if (!string.IsNullOrWhiteSpace(extra))
+                SyncLog.Info(log, "  Detalle: " + extra);
+        }
+
         /// <summary>Motivo corto para log Info (sin XML ni rutas largas).</summary>
         private static string FormatShortUploadError(Exception ex)
         {
             string msg = ex?.Message ?? "error desconocido";
 
             if (msg.IndexOf("FIELD_VALUE_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "documento ya existe (FIELD_VALUE_ALREADY_EXISTS)";
+                return "documento ya existe";
 
             if (TryParseMissingMandatoryField(msg, out string mandatoryField))
                 return "falta campo obligatorio " + StripSingleSelectSuffix(mandatoryField);
 
             if (TryParseInvalidFieldValue(msg, out string invalidField))
-                return "valor inválido " + StripSingleSelectSuffix(invalidField);
+            {
+                string campo = StripSingleSelectSuffix(invalidField);
+                string valor = TryParseQuotedValueBefore(msg, "not valid for field ");
+                if (!string.IsNullOrWhiteSpace(valor))
+                    return "valor inválido en " + campo + ": \"" + valor + "\"";
+                return "valor inválido en " + campo;
+            }
 
             if (msg.IndexOf("archivo no encontrado", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "archivo no encontrado";
@@ -711,6 +749,81 @@ namespace SigmabotSync.Application.FileExtraction
             if (string.IsNullOrEmpty(text) || text.Length <= max)
                 return text ?? "";
             return text.Substring(0, max) + "...";
+        }
+
+        /// <summary>Texto útil de la excepción, sin XML. Null si no aporta nada respecto del motivo.</summary>
+        private static string ExtraerDetalleParaLog(string message, string motivo)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return null;
+
+            string detalle = message;
+            const string respuesta = "Respuesta:";
+            int idx = message.LastIndexOf(respuesta, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+                detalle = message.Substring(idx + respuesta.Length);
+
+            detalle = LimpiarTextoLog(detalle);
+            if (string.IsNullOrWhiteSpace(detalle))
+                return null;
+            if (!string.IsNullOrWhiteSpace(motivo)
+                && (string.Equals(detalle, motivo, StringComparison.OrdinalIgnoreCase)
+                    || detalle.StartsWith(motivo, StringComparison.OrdinalIgnoreCase)
+                    || motivo.StartsWith(detalle, StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            return TruncateForLog(detalle, 300);
+        }
+
+        private static string LimpiarTextoLog(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "";
+
+            var sb = new StringBuilder(text.Length);
+            bool inTag = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '<')
+                {
+                    inTag = true;
+                    continue;
+                }
+                if (c == '>')
+                {
+                    inTag = false;
+                    sb.Append(' ');
+                    continue;
+                }
+                if (!inTag)
+                    sb.Append(c);
+            }
+
+            string limpio = sb.ToString().Replace("\r", " ").Replace("\n", " ").Replace("\t", " ");
+            while (limpio.IndexOf("  ", StringComparison.Ordinal) >= 0)
+                limpio = limpio.Replace("  ", " ");
+            return limpio.Trim();
+        }
+
+        private static string TryParseQuotedValueBefore(string text, string marker)
+        {
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(marker))
+                return null;
+            int idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx <= 0)
+                return null;
+            int close = text.LastIndexOf('\'', idx - 1);
+            if (close < 0)
+                close = text.LastIndexOf('"', idx - 1);
+            if (close <= 0)
+                return null;
+            char quote = text[close];
+            int open = text.LastIndexOf(quote, close - 1);
+            if (open < 0 || open >= close)
+                return null;
+            string valor = text.Substring(open + 1, close - open - 1).Trim();
+            return string.IsNullOrWhiteSpace(valor) ? null : valor;
         }
 
         /// <summary>
