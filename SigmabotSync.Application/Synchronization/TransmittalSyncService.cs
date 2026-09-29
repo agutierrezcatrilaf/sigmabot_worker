@@ -614,8 +614,16 @@ namespace SigmabotSync.Application.Synchronization
             }
 
             string codelcoBridgeKey = IsLado2Source(request, sourceProject) ? null : attachment.DocumentNo?.Trim();
-            TargetDocumentLookup existing = await ResolveTargetDocumentWithHintsAsync(
+            TargetResolution resolved = await ResolveTargetDocumentWithHintsAsync(
                 request, targetProject, targetSchema, mappingKey, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false);
+            if (resolved.BlockCreate)
+            {
+                SyncLog.Info(log,
+                    $"  No se crea otro documento en el destino ({attachment.DocumentNo}): la búsqueda no pudo completarse. Se reintentará.");
+                return SyncAttachmentOutcome.Failed;
+            }
+
+            TargetDocumentLookup existing = resolved.Document;
 
             if (existing != null && !string.IsNullOrWhiteSpace(existing.DocumentId))
             {
@@ -730,8 +738,16 @@ namespace SigmabotSync.Application.Synchronization
             }
 
             string codelcoBridgeKey = IsLado2Source(request, sourceProject) ? null : attachment.DocumentNo?.Trim();
-            TargetDocumentLookup existing = await ResolveTargetDocumentWithHintsAsync(
+            TargetResolution resolved = await ResolveTargetDocumentWithHintsAsync(
                 request, targetProject, targetSchema, mappingKey, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false);
+            if (resolved.BlockCreate)
+            {
+                SyncLog.Info(log,
+                    $"  No se crea otro documento en el destino ({attachment.DocumentNo}): la búsqueda no pudo completarse. Se reintentará.");
+                return SyncAttachmentOutcome.Failed;
+            }
+
+            TargetDocumentLookup existing = resolved.Document;
 
             string tempFile = Path.Combine(Path.GetTempPath(), "sigmabot_sync_" + Guid.NewGuid().ToString("N") + Path.GetExtension(attachment.FileName ?? ".bin"));
             try
@@ -835,8 +851,9 @@ namespace SigmabotSync.Application.Synchronization
                 {
                     SyncLog.Info(log, 
                         $"Register indica documento existente ({destinationDocumentNo}); reintento supersede con archivo...");
-                    TargetDocumentLookup existing = await LookupTargetDocumentInRegisterAsync(
+                    DestinationSearchHit existingHit = await LookupTargetDocumentInRegisterAsync(
                         request, targetProject, targetSchema, destinationDocumentNo, revision, log, cancellationToken).ConfigureAwait(false);
+                    TargetDocumentLookup existing = existingHit.Document;
                     if (existing != null && !string.IsNullOrWhiteSpace(existing.DocumentId))
                     {
                         string destDocNoForLog = ResolveSupersedeDestinationDocumentNo(existing, destinationDocumentNo);
@@ -961,19 +978,19 @@ namespace SigmabotSync.Application.Synchronization
                 if (allowNonCurrentRetry && ResponseIndicatesCannotSupersedeNonCurrent(responseText))
                 {
                     string codelcoBridgeKey = IsLado2Source(request, sourceProject) ? null : attachment.DocumentNo?.Trim();
-                    TargetDocumentLookup current = await LookupCurrentTargetDocumentInRegisterAsync(
-                        request, targetProject, targetSchema, destinationDocumentNo, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false);
-                    if (current != null
-                        && !string.IsNullOrWhiteSpace(current.DocumentId)
-                        && !string.Equals(current.DocumentId.Trim(), localDocumentId?.Trim(), StringComparison.OrdinalIgnoreCase))
+                    TargetDocumentLookup currentHit = (await LookupCurrentTargetDocumentInRegisterAsync(
+                        request, targetProject, targetSchema, destinationDocumentNo, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false)).Document;
+                    if (currentHit != null
+                        && !string.IsNullOrWhiteSpace(currentHit.DocumentId)
+                        && !string.Equals(currentHit.DocumentId.Trim(), localDocumentId?.Trim(), StringComparison.OrdinalIgnoreCase))
                     {
                         SyncLog.Info(log, 
-                            $"Supersede: {localDocumentId} no es vigente; reintento con versión actual {current.DocumentId}.");
-                        string currentDocNo = ResolveSupersedeDestinationDocumentNo(current, destinationDocumentNo);
+                            $"Supersede: {localDocumentId} no es vigente; reintento con versión actual {currentHit.DocumentId}.");
+                        string currentDocNo = ResolveSupersedeDestinationDocumentNo(currentHit, destinationDocumentNo);
                         return await SupersedeDocumentAsync(
                             request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings,
-                            attachment, revision, currentDocNo, current.DocumentId, fileName, filePath, hasFile,
-                            mailHints, sourceHints, current.RegisterHints, mailId, log, cancellationToken,
+                            attachment, revision, currentDocNo, currentHit.DocumentId, fileName, filePath, hasFile,
+                            mailHints, sourceHints, currentHit.RegisterHints, mailId, log, cancellationToken,
                             allowNonCurrentRetry: false).ConfigureAwait(false);
                     }
                 }
@@ -1116,10 +1133,10 @@ namespace SigmabotSync.Application.Synchronization
         /// <summary>
         /// Busca documento vigente en destino: register/search por <see cref="CodelcoBridgeField"/> (ida)
         /// → register/search por docno (vuelta) → mapeo local BD solo si Aconex no devuelve versión actual.
-        /// El supersede de Aconex exige el DocumentId de la versión current, no un id histórico
-        /// (p. ej. misma revisión B aprobada otra vez).
+        /// En la ida, si la búsqueda por código Codelco no contesta, <see cref="TargetResolution.BlockCreate"/>
+        /// impide un alta nueva (Aconex asignaría otro número). Una respuesta vacía sigue permitiendo el alta.
         /// </summary>
-        private async Task<TargetDocumentLookup> ResolveTargetDocumentWithHintsAsync(
+        private async Task<TargetResolution> ResolveTargetDocumentWithHintsAsync(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem targetProject,
             AconexRegisterSchemaSnapshot targetSchema,
@@ -1129,25 +1146,26 @@ namespace SigmabotSync.Application.Synchronization
             Action<string, int> log,
             CancellationToken cancellationToken)
         {
-            TargetDocumentLookup live = await LookupCurrentTargetDocumentInRegisterAsync(
+            TargetResolution live = await LookupCurrentTargetDocumentInRegisterAsync(
                 request, targetProject, targetSchema, documentNo, revision, codelcoBridgeKey, log, cancellationToken).ConfigureAwait(false);
-            if (live != null && !string.IsNullOrWhiteSpace(live.DocumentId))
+            if (live.Document != null && !string.IsNullOrWhiteSpace(live.Document.DocumentId))
             {
                 if (!string.IsNullOrWhiteSpace(documentNo))
                 {
                     string localDocumentId = await TryGetLocalTargetDocumentIdAsync(
                         request, targetProject.ProjectId, documentNo.Trim(), revision, cancellationToken).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(localDocumentId)
-                        && !string.Equals(localDocumentId.Trim(), live.DocumentId.Trim(), StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(localDocumentId.Trim(), live.Document.DocumentId.Trim(), StringComparison.OrdinalIgnoreCase))
                     {
                         SyncLog.Info(log, 
                             $"  Mapeo local desactualizado (id={localDocumentId}); " +
-                            $"se usa versión vigente id={live.DocumentId} rev={live.Revision ?? "?"}.");
+                            $"se usa versión vigente id={live.Document.DocumentId} rev={live.Document.Revision ?? "?"}.");
                     }
                 }
 
-                return await FinalizeRecoveredTargetDocumentAsync(
-                    request, targetProject, documentNo, revision, live, log, cancellationToken).ConfigureAwait(false);
+                TargetDocumentLookup finalized = await FinalizeRecoveredTargetDocumentAsync(
+                    request, targetProject, documentNo, revision, live.Document, log, cancellationToken).ConfigureAwait(false);
+                return TargetResolution.Found(finalized);
             }
 
             if (!string.IsNullOrWhiteSpace(documentNo))
@@ -1158,19 +1176,22 @@ namespace SigmabotSync.Application.Synchronization
                 {
                     SyncLog.Info(log, 
                         $"  Mapeo local BD (sin match vigente en register): docno={documentNo.Trim()} rev={revision} → {localDocumentId}");
-                    return new TargetDocumentLookup
+                    return TargetResolution.Found(new TargetDocumentLookup
                     {
                         DocumentId = localDocumentId,
                         Revision = revision,
                         RegisterHints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    };
+                    });
                 }
             }
 
-            return null;
+            if (live.BlockCreate)
+                return TargetResolution.DoNotCreate();
+
+            return TargetResolution.NotFound();
         }
 
-        private async Task<TargetDocumentLookup> LookupCurrentTargetDocumentInRegisterAsync(
+        private async Task<TargetResolution> LookupCurrentTargetDocumentInRegisterAsync(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem targetProject,
             AconexRegisterSchemaSnapshot targetSchema,
@@ -1180,31 +1201,52 @@ namespace SigmabotSync.Application.Synchronization
             Action<string, int> log,
             CancellationToken cancellationToken)
         {
-            if (!string.IsNullOrWhiteSpace(codelcoBridgeKey))
+            bool ida = !string.IsNullOrWhiteSpace(codelcoBridgeKey);
+            if (ida)
             {
-                TargetDocumentLookup fromBridge = await LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
+                DestinationSearchHit fromBridge = await LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
                     request, targetProject, targetSchema, codelcoBridgeKey, revision, log, cancellationToken).ConfigureAwait(false);
-                if (fromBridge != null && !string.IsNullOrWhiteSpace(fromBridge.DocumentId))
+                if (fromBridge.Document != null && !string.IsNullOrWhiteSpace(fromBridge.Document.DocumentId))
                 {
                     SyncLog.Debug(log, 
-                        $"  Register destino: encontrado por {CodelcoBridgeField}={codelcoBridgeKey.Trim()} → {fromBridge.DocumentId}");
-                    return fromBridge;
+                        $"  Register destino: encontrado por {CodelcoBridgeField}={codelcoBridgeKey.Trim()} → {fromBridge.Document.DocumentId}");
+                    return TargetResolution.Found(fromBridge.Document);
                 }
+
+                if (!string.IsNullOrWhiteSpace(documentNo))
+                {
+                    DestinationSearchHit fromRegister = await LookupTargetDocumentInRegisterAsync(
+                        request, targetProject, targetSchema, documentNo.Trim(), revision, log, cancellationToken).ConfigureAwait(false);
+                    if (fromRegister.Document != null && !string.IsNullOrWhiteSpace(fromRegister.Document.DocumentId))
+                    {
+                        SyncLog.Info(log, 
+                            $"  Register destino: encontrado por docno={documentNo.Trim()} rev={fromRegister.Document.Revision ?? "?"} → {fromRegister.Document.DocumentId}");
+                        return TargetResolution.Found(fromRegister.Document);
+                    }
+                }
+
+                if (fromBridge.SearchFailed)
+                    return TargetResolution.DoNotCreate();
+
+                return TargetResolution.NotFound();
             }
 
             if (!string.IsNullOrWhiteSpace(documentNo))
             {
-                TargetDocumentLookup fromRegister = await LookupTargetDocumentInRegisterAsync(
+                DestinationSearchHit fromRegister = await LookupTargetDocumentInRegisterAsync(
                     request, targetProject, targetSchema, documentNo.Trim(), revision, log, cancellationToken).ConfigureAwait(false);
-                if (fromRegister != null && !string.IsNullOrWhiteSpace(fromRegister.DocumentId))
+                if (fromRegister.Document != null && !string.IsNullOrWhiteSpace(fromRegister.Document.DocumentId))
                 {
                     SyncLog.Info(log, 
-                        $"  Register destino: encontrado por docno={documentNo.Trim()} rev={fromRegister.Revision ?? "?"} → {fromRegister.DocumentId}");
-                    return fromRegister;
+                        $"  Register destino: encontrado por docno={documentNo.Trim()} rev={fromRegister.Document.Revision ?? "?"} → {fromRegister.Document.DocumentId}");
+                    return TargetResolution.Found(fromRegister.Document);
                 }
+
+                if (fromRegister.SearchFailed)
+                    return TargetResolution.DoNotCreate();
             }
 
-            return null;
+            return TargetResolution.NotFound();
         }
 
         private async Task<string> TryGetLocalTargetDocumentIdAsync(
@@ -1343,7 +1385,39 @@ namespace SigmabotSync.Application.Synchronization
             return BuildTargetDocumentLookupFromSearchResult(match, log);
         }
 
-        private async Task<TargetDocumentLookup> LookupTargetDocumentInRegisterAsync(
+        private readonly struct DestinationSearchHit
+        {
+            public TargetDocumentLookup Document { get; }
+            public bool SearchFailed { get; }
+
+            private DestinationSearchHit(TargetDocumentLookup document, bool searchFailed)
+            {
+                Document = document;
+                SearchFailed = searchFailed;
+            }
+
+            public static DestinationSearchHit Found(TargetDocumentLookup document) => new DestinationSearchHit(document, false);
+            public static DestinationSearchHit NotFound() => new DestinationSearchHit(null, false);
+            public static DestinationSearchHit Failed() => new DestinationSearchHit(null, true);
+        }
+
+        private readonly struct TargetResolution
+        {
+            public TargetDocumentLookup Document { get; }
+            public bool BlockCreate { get; }
+
+            private TargetResolution(TargetDocumentLookup document, bool blockCreate)
+            {
+                Document = document;
+                BlockCreate = blockCreate;
+            }
+
+            public static TargetResolution Found(TargetDocumentLookup document) => new TargetResolution(document, false);
+            public static TargetResolution NotFound() => new TargetResolution(null, false);
+            public static TargetResolution DoNotCreate() => new TargetResolution(null, true);
+        }
+
+        private async Task<DestinationSearchHit> LookupTargetDocumentInRegisterAsync(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem targetProject,
             AconexRegisterSchemaSnapshot targetSchema,
@@ -1354,7 +1428,7 @@ namespace SigmabotSync.Application.Synchronization
             IReadOnlyList<string> returnFields = null)
         {
             if (string.IsNullOrWhiteSpace(documentNo))
-                return null;
+                return DestinationSearchHit.NotFound();
 
             returnFields ??= BuildTargetRegisterExistenceSearchReturnFields();
             SyncLog.Debug(log, 
@@ -1370,15 +1444,17 @@ namespace SigmabotSync.Application.Synchronization
                     ? $"{searchResult.AconexErrorCode}: {searchResult.AconexErrorDescription}"
                     : Truncate(searchResult.ResponseBody, 400);
                 LogErrorDocumento(log, documentNo, null, "no se pudo buscar el documento en el registro destino", aconexMsg);
-                return null;
+                return DestinationSearchHit.Failed();
             }
 
             var page = searchResult?.Page;
-            if (page?.searchResults == null || page.searchResults.Count == 0)
+            if (searchResult == null || page?.searchResults == null || page.searchResults.Count == 0)
             {
+                if (searchResult == null)
+                    return DestinationSearchHit.Failed();
                 SyncLog.Debug(log, 
                     $"  Register destino: sin resultados search para docno={documentNo} (proyecto {targetProject.ProjectId}).");
-                return null;
+                return DestinationSearchHit.NotFound();
             }
 
             if (page.searchResults.Count > 1)
@@ -1390,13 +1466,13 @@ namespace SigmabotSync.Application.Synchronization
             if (match == null || match.Id <= 0)
             {
                 SyncLog.Debug(log, $"  Register destino: sin match docno={documentNo} entre {page.searchResults.Count} resultado(s).");
-                return null;
+                return DestinationSearchHit.NotFound();
             }
 
-            return BuildTargetDocumentLookupFromSearchResult(match, log);
+            return DestinationSearchHit.Found(BuildTargetDocumentLookupFromSearchResult(match, log));
         }
 
-        private async Task<TargetDocumentLookup> LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
+        private async Task<DestinationSearchHit> LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
             TransmittalSyncRunRequest request,
             ProyectoSyncItem targetProject,
             AconexRegisterSchemaSnapshot targetSchema,
@@ -1407,7 +1483,7 @@ namespace SigmabotSync.Application.Synchronization
             IReadOnlyList<string> returnFields = null)
         {
             if (string.IsNullOrWhiteSpace(codelcoBridgeKey))
-                return null;
+                return DestinationSearchHit.NotFound();
 
             returnFields ??= BuildTargetRegisterBridgeSearchReturnFields();
             string searchQuery = BuildCodelcoBridgeSearchQuery(codelcoBridgeKey);
@@ -1423,14 +1499,16 @@ namespace SigmabotSync.Application.Synchronization
                     ? $"{searchResult.AconexErrorCode}: {searchResult.AconexErrorDescription}"
                     : Truncate(searchResult.ResponseBody, 400);
                 LogErrorDocumento(log, codelcoBridgeKey, null, "no se pudo buscar el documento en el registro destino por el código Codelco", aconexMsg);
-                return null;
+                return DestinationSearchHit.Failed();
             }
 
             var page = searchResult?.Page;
-            if (page?.searchResults == null || page.searchResults.Count == 0)
+            if (searchResult == null || page?.searchResults == null || page.searchResults.Count == 0)
             {
+                if (searchResult == null)
+                    return DestinationSearchHit.Failed();
                 SyncLog.Debug(log, $"  Register destino: sin resultados search {CodelcoBridgeField}={codelcoBridgeKey}.");
-                return null;
+                return DestinationSearchHit.NotFound();
             }
 
             if (page.searchResults.Count > 1)
@@ -1444,10 +1522,10 @@ namespace SigmabotSync.Application.Synchronization
             {
                 SyncLog.Debug(log, 
                     $"  Register destino: sin match {CodelcoBridgeField}={codelcoBridgeKey} entre {page.searchResults.Count} resultado(s).");
-                return null;
+                return DestinationSearchHit.NotFound();
             }
 
-            return BuildTargetDocumentLookupFromSearchResult(match, log);
+            return DestinationSearchHit.Found(BuildTargetDocumentLookupFromSearchResult(match, log));
         }
 
         private static TargetDocumentLookup BuildTargetDocumentLookupFromSearchResult(
@@ -2030,9 +2108,9 @@ namespace SigmabotSync.Application.Synchronization
                 {
                     SyncLog.Debug(log, 
                         $"  Register destino supersede (ida): búsqueda {CodelcoBridgeField}={codelcoBridgeKey}");
-                    lookup = await LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
+                    lookup = (await LookupTargetDocumentByCodelcoBridgeInRegisterAsync(
                         request, targetProject, targetSchema, codelcoBridgeKey, revision, log, cancellationToken,
-                        returnFields).ConfigureAwait(false);
+                        returnFields).ConfigureAwait(false)).Document;
                 }
             }
             else
@@ -2043,9 +2121,9 @@ namespace SigmabotSync.Application.Synchronization
                     SyncLog.Debug(log, 
                         $"  Register destino supersede (vuelta): docno={codelcoDocNo.Trim()} " +
                         $"(desde {CodelcoBridgeField} origen SALFA)");
-                    lookup = await LookupTargetDocumentInRegisterAsync(
+                    lookup = (await LookupTargetDocumentInRegisterAsync(
                         request, targetProject, targetSchema, codelcoDocNo.Trim(), revision, log, cancellationToken,
-                        returnFields).ConfigureAwait(false);
+                        returnFields).ConfigureAwait(false)).Document;
                 }
             }
 
