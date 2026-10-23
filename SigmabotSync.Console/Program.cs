@@ -213,7 +213,7 @@ namespace SigmabotSync.Console
                 fechaInicioEjecucion = DateTime.Now;
                 idEjecucion = InsertarInicioEjecucion(connectionString, idTrabajo, fechaInicioEjecucion.Value, tipoEjecucion);
                 rutaLogEjecucion = DailyLog.IniciarLogEjecucion(idTrabajo, idEjecucion.Value);
-                SigmabotSync.Application.Common.Utilities.Wlog("Log ejecución: " + rutaLogEjecucion, 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("Log ejecución: " + rutaLogEjecucion, 1);
 
                 switch (tipoTrabajo)
                 {
@@ -247,9 +247,8 @@ namespace SigmabotSync.Console
                 {
                     exito = false;
                     mensajeError =
-                        $"FileUpload: {upload.Errores} error(es), {upload.Enviados} enviado(s), {upload.OmitidosYaProcesados} ya procesado(s).";
-                    SigmabotSync.Application.Common.Utilities.Wlog(
-                        "=== Extracción finalizada con errores de envío (IdTrabajo=" + idTrabajo + "): " + mensajeError + " ===", 0);
+                        $"{upload.Errores} archivo(s) no se pudieron enviar. Enviados: {upload.Enviados}. Ya estaban procesados: {upload.OmitidosYaProcesados}.";
+                    SigmabotSync.Application.Common.Utilities.Wlog("=== Terminó con errores ===", 0);
                     GuardarResultadoTrabajo(connectionString, idTrabajo, exito: false, mensajeError);
                 }
                 else if (fileExtraction != null && fileExtraction.Errores > 0)
@@ -263,7 +262,7 @@ namespace SigmabotSync.Console
                 }
                 else
                 {
-                    SigmabotSync.Application.Common.Utilities.Wlog("=== Extracción completada exitosamente (IdTrabajo=" + idTrabajo + ") ===", 0);
+                    SigmabotSync.Application.Common.Utilities.Wlog("=== Terminó bien ===", 0);
                     exito = true;
                     GuardarResultadoTrabajo(connectionString, idTrabajo, exito: true, null);
                 }
@@ -271,7 +270,7 @@ namespace SigmabotSync.Console
             catch (Exception ex)
             {
                 SigmabotSync.Application.Common.Utilities.Wlog("ERROR: " + ex.Message, 0);
-                SigmabotSync.Application.Common.Utilities.Wlog("Stack Trace: " + ex.StackTrace, 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("Stack Trace: " + ex.StackTrace, 1);
 
                 mensajeError = ex.Message;
                 detalleError = FormatearDetalleEjecucionParaHistorial(ex);
@@ -795,10 +794,12 @@ namespace SigmabotSync.Console
             string tablaMetadata = FileUploadWithMetadataDefaults.ResolverTablaMetadata(trabajoConfig.TablaMetadata);
             string tablaPaths = FileUploadWithMetadataDefaults.ResolverTablaPaths(trabajoConfig.TablaPaths);
 
-            SigmabotSync.Application.Common.Utilities.Wlog("Configuración FileUploadWithMetadata (IdTrabajo=" + trabajoConfig.IdTrabajo + "):", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Proyecto={projectName}, IdProyecto={projectId}, TablaMetadata={tablaMetadata}, TablaPaths={tablaPaths}", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Credencial Aconex: {credAconex.Nombre} ({credAconex.Aconex_Instancia})", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Credencial BD: {credBd.Nombre} → {credBd.BD_Servidor}/{credBd.BD_BaseDatos}", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog("Proyecto " + projectName + ".", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog(
+                "Configuración FileUploadWithMetadata (IdTrabajo=" + trabajoConfig.IdTrabajo + "): Proyecto=" + projectName
+                + ", IdProyecto=" + projectId + ", TablaMetadata=" + tablaMetadata + ", TablaPaths=" + tablaPaths
+                + ", Credencial Aconex=" + credAconex.Nombre + " (" + credAconex.Aconex_Instancia + ")"
+                + ", Credencial BD=" + credBd.Nombre + " → " + credBd.BD_Servidor + "/" + credBd.BD_BaseDatos, 1);
             SigmabotSync.Application.Common.Utilities.Wlog("", 0);
 
             using (var registerWritePort = new AconexRegisterWriteAdapter())
@@ -810,7 +811,8 @@ namespace SigmabotSync.Console
                 };
                 worker.OnStatus += (status, nivel) =>
                 {
-                    SigmabotSync.Application.Common.Utilities.Wlog($"[FileUpload] {status}", nivel);
+                    string linea = nivel == 0 ? status : "[FileUpload] " + status;
+                    SigmabotSync.Application.Common.Utilities.Wlog(linea, nivel);
                 };
 
                 await worker.RunAsync();

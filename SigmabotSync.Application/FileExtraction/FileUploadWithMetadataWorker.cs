@@ -28,8 +28,8 @@ namespace SigmabotSync.Application.FileExtraction
         /// </summary>
         private const bool RegisterDocumentUseAconexAutoNumber = true;
 
-        /// <summary>Valor por defecto de <c>TipoDocumento</c> → <c>TipoDeDocumento_singleSelect</c> si la fila no trae dato.</summary>
-        private const string DefaultTipoDeDocumentoSingleSelectValue = "Certificado";
+        /// <summary>Valor de <c>TipoDocumento</c> → <c>TipoDeDocumento_singleSelect</c> si la fila no trae dato o trae el texto <c>Certificado</c>.</summary>
+        private const string DefaultTipoDeDocumentoSingleSelectValue = "CER-Certificado";
 
         /// <summary>Nombre en <c>Doctype</c>/<c>TiposDocumentos</c> para <c>DocumentTypeId</c> si la fila no trae <c>doctype</c>.</summary>
         private const string DefaultDocumentTypeName = "Documento Interno";
@@ -38,6 +38,30 @@ namespace SigmabotSync.Application.FileExtraction
         private const string DefaultAuthorName = "SALFAMontajes";
 
         private const string XmlNameTipoDeDocumentoSingleSelect = "TipoDeDocumento_singleSelect";
+
+        /// <summary>Valor fijo de <c>Origen_singleSelect</c> cuando la fila no trae el dato.</summary>
+        private const string XmlNameOrigenSingleSelect = "Origen_singleSelect";
+        private const string DefaultOrigenSingleSelectValue = "Externo";
+
+        /// <summary>Valor fijo de <c>EstadoDeControlRedLine_singleSelect</c> cuando la fila no trae el dato.</summary>
+        private const string XmlNameEstadoRedLineSingleSelect = "EstadoDeControlRedLine_singleSelect";
+        private const string DefaultEstadoRedLineSingleSelectValue = "TBD";
+
+        /// <summary>
+        /// Valores temporales (los mismos del alta de Plano Externo) para campos que <c>DocumentosMetadata</c> todavía no tiene.
+        /// <c>EstatusBim</c> sí tiene columna: TBD solo si la fila viene vacía.
+        /// </summary>
+        private static readonly (string XmlSingleSelect, string Valor)[] TemporaryMissingProjectFields =
+        {
+            ("EstadoDeCubicacin_singleSelect", "TBD"),
+            ("Entidad_singleSelect", "TBD"),
+            ("EstadoDeCompletitud_singleSelect", "TBD"),
+            ("EstadoDeGestinDelCambio_singleSelect", "TBD"),
+            ("EstadoDeConsistencia_singleSelect", "TBD"),
+        };
+
+        private const string XmlNameEstatusBimSingleSelect = "EstatusBim_singleSelect";
+        private const string DefaultEstatusBimWhenEmpty = "TBD";
 
         private readonly TrabajoConfiguracion _trabajoConfig;
         private readonly Credencial _credAconex;
@@ -116,11 +140,12 @@ namespace SigmabotSync.Application.FileExtraction
 
             Action<string, int> log = (msg, nivel) => OnStatus?.Invoke(msg, nivel);
 
-            SyncLog.Info(log, $"Leyendo {tablaMetadata} + {tablaPaths}...");
+            SyncLog.Info(log, "Leyendo los documentos para enviar.");
+            SyncLog.Debug(log, $"Leyendo {tablaMetadata} + {tablaPaths}...");
             DataTable metadata = LeerMetadataConPaths(connectionStringBd, tablaMetadata, tablaPaths);
             if (metadata == null || metadata.Rows.Count == 0)
             {
-                SyncLog.Info(log, "No hay registros en la tabla de metadata.");
+                SyncLog.Info(log, "No hay documentos para enviar.");
                 LastRunSummary = new FileUploadResumen();
                 return;
             }
@@ -142,8 +167,10 @@ namespace SigmabotSync.Application.FileExtraction
             int enviados = 0;
             int omitidosYaProcesados = 0;
             int errores = 0;
+            var erroresDetalle = new List<ErrorCargaDocumento>();
 
-            SyncLog.Info(log, $"Procesando {total} registro(s) de metadata...");
+            SyncLog.Info(log, $"Se van a revisar {total} documentos.");
+            SyncLog.Debug(log, $"Procesando {total} registro(s) de metadata...");
 
             SyncLog.Debug(log, "Obteniendo schema Register Document desde Aconex...");
             AconexRegisterSchemaSnapshot registerSchema = await ObtenerSchemaRegistroAconexAsync(log);
@@ -173,16 +200,24 @@ namespace SigmabotSync.Application.FileExtraction
                     : Path.GetFileName(ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo) ?? "") ?? "?";
                 if (string.IsNullOrWhiteSpace(archivo))
                     archivo = "?";
+                string etiqueta = CargaDocumentoErrores.Etiqueta(
+                    GetValueFromRow(row, metadata.Columns, "NumeroDocumento", "docno", "DocumentNumber"),
+                    metaId,
+                    archivo);
 
                 if (string.IsNullOrEmpty(filePath))
                 {
                     errores++;
+                    ErrorCargaDocumento noEncontrado = CargaDocumentoErrores.ArchivoNoEncontrado(
+                        etiqueta,
+                        ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo));
+                    erroresDetalle.Add(noEncontrado);
                     LogErrorDocumento(
                         log,
                         metaId,
                         archivo,
                         ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo),
-                        "archivo no encontrado");
+                        noEncontrado.Motivo);
                     procesados++;
                     OnProgress?.Invoke(procesados, total);
                     continue;
@@ -194,13 +229,14 @@ namespace SigmabotSync.Application.FileExtraction
                         filePath, row, metadata.Columns, registerSchema, mapTipos, mapEstatus, log);
                     enviados++;
                     AcumularFilaProcesadaParaUpdate(row, columnaId, idsProcesadosExitosamente);
-                    SyncLog.Info(log, $"OK Id={metaId} archivo={archivo} → DocumentId={documentId ?? "?"}");
+                    SyncLog.Debug(log, $"OK Id={metaId} archivo={archivo} → DocumentId={documentId ?? "?"}");
                 }
                 catch (Exception ex)
                 {
                     errores++;
-                    string motivo = FormatShortUploadError(ex);
-                    LogErrorDocumento(log, metaId, archivo, filePath, motivo, ex?.Message);
+                    ErrorCargaDocumento clasificado = CargaDocumentoErrores.Clasificar(etiqueta, ex);
+                    erroresDetalle.Add(clasificado);
+                    LogErrorDocumento(log, metaId, archivo, filePath, clasificado.Motivo, ex?.Message);
                 }
 
                 procesados++;
@@ -215,8 +251,9 @@ namespace SigmabotSync.Application.FileExtraction
                 idsProcesadosExitosamente,
                 log);
 
-            SyncLog.Info(log,
+            SyncLog.Debug(log,
                 $"Completado: {enviados} enviado(s), {errores} error(es), {omitidosYaProcesados} ya procesado(s), {marcados} marcado(s) con Procesado=1.");
+            CargaDocumentoErrores.EscribirResumen(log, total, enviados, omitidosYaProcesados, erroresDetalle);
             LastRunSummary = new FileUploadResumen
             {
                 Enviados = enviados,
@@ -552,10 +589,12 @@ namespace SigmabotSync.Application.FileExtraction
                     _aconexConfig.IntegrationId,
                     default).ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex)
+            catch (Exception ex)
             {
-                LogErrorTrabajo(log, "no se pudo obtener el schema del registro en Aconex", ex?.Message);
-                throw;
+                ErrorCargaDocumento clasificado = CargaDocumentoErrores.Clasificar("preparación", ex);
+                SyncLog.Info(log, "No se pudo preparar la carga: " + clasificado.Motivo + ".");
+                SyncLog.Debug(log, ex.ToString());
+                throw new InvalidOperationException(clasificado.Motivo, ex);
             }
 
             AconexRegisterSchemaSnapshot snapshot = AconexRegisterSchemaParser.ParseSnapshot(responseText);
@@ -618,16 +657,11 @@ namespace SigmabotSync.Application.FileExtraction
             if (!raw.IsSuccessStatusCode)
             {
                 SyncLog.Debug(log, $"Register Document falló. Status={raw.StatusCode}, Response={TruncateForLog(responseText, 400)}");
-                if (ResponseIndicatesFieldValueAlreadyExists(responseText))
-                {
-                    throw new InvalidOperationException(
-                        "Aconex indica FIELD_VALUE_ALREADY_EXISTS (p. ej. documento o valor único ya existente). " +
-                        "Register Document solo crea documentos nuevos. Opciones: excluir esa fila si ya se cargó, " +
-                        "o usar en Aconex el flujo de nueva revisión / Supersede según su proceso. " +
-                        $"PathFisico={refArchivo}. Respuesta: {responseText}");
-                }
-
-                throw new InvalidOperationException(FormatAconexRegisterFailureMessage(raw.StatusCode, responseText));
+                CargaDocumentoException clasificado = CargaDocumentoErrores.DesdeRespuestaHttp(raw.StatusCode, responseText);
+                throw new CargaDocumentoException(
+                    clasificado.Categoria,
+                    clasificado.MotivoCliente,
+                    FormatAconexRegisterFailureMessage(raw.StatusCode, responseText));
             }
 
             return ParseRegisterDocumentResponse(responseText);
@@ -652,8 +686,7 @@ namespace SigmabotSync.Application.FileExtraction
         }
 
         /// <summary>
-        /// Línea Info del log descargable: identificador, motivo y ruta.
-        /// Si el mensaje trae más contexto (respuesta de Aconex), va en una segunda línea.
+        /// Detalle técnico solo en Debug. El log descargable agrupa estos errores al cierre.
         /// </summary>
         private static void LogErrorDocumento(
             Action<string, int> log,
@@ -664,84 +697,10 @@ namespace SigmabotSync.Application.FileExtraction
             string detalle = null)
         {
             string rutaTxt = string.IsNullOrWhiteSpace(ruta) ? "(sin ruta)" : ruta.Trim();
-            SyncLog.Info(log, $"ERROR Id={metaId} archivo={archivo}: {motivo}. Ruta={rutaTxt}");
+            SyncLog.Debug(log, $"ERROR Id={metaId} archivo={archivo}: {motivo}. Ruta={rutaTxt}");
             string extra = ExtraerDetalleParaLog(detalle, motivo);
             if (!string.IsNullOrWhiteSpace(extra))
-                SyncLog.Info(log, "  Detalle: " + extra);
-        }
-
-        private static void LogErrorTrabajo(Action<string, int> log, string motivo, string detalle)
-        {
-            SyncLog.Info(log, "ERROR: " + motivo);
-            string extra = ExtraerDetalleParaLog(detalle, motivo);
-            if (!string.IsNullOrWhiteSpace(extra))
-                SyncLog.Info(log, "  Detalle: " + extra);
-        }
-
-        /// <summary>Motivo corto para log Info (sin XML ni rutas largas).</summary>
-        private static string FormatShortUploadError(Exception ex)
-        {
-            string msg = ex?.Message ?? "error desconocido";
-
-            if (msg.IndexOf("FIELD_VALUE_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "documento ya existe";
-
-            if (TryParseMissingMandatoryField(msg, out string mandatoryField))
-                return "falta campo obligatorio " + StripSingleSelectSuffix(mandatoryField);
-
-            if (TryParseInvalidFieldValue(msg, out string invalidField))
-            {
-                string campo = StripSingleSelectSuffix(invalidField);
-                string valor = TryParseQuotedValueBefore(msg, "not valid for field ");
-                if (!string.IsNullOrWhiteSpace(valor))
-                    return "valor inválido en " + campo + ": \"" + valor + "\"";
-                return "valor inválido en " + campo;
-            }
-
-            if (msg.IndexOf("archivo no encontrado", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "archivo no encontrado";
-
-            // Quitar XML embebido si quedó en el mensaje
-            int xmlIdx = msg.IndexOf("<?xml", StringComparison.OrdinalIgnoreCase);
-            if (xmlIdx > 0)
-                msg = msg.Substring(0, xmlIdx).Trim().TrimEnd('.', ' ');
-
-            return TruncateForLog(msg, 160);
-        }
-
-        private static string StripSingleSelectSuffix(string field)
-        {
-            if (string.IsNullOrWhiteSpace(field))
-                return field ?? "";
-            const string suffix = "_singleSelect";
-            if (field.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                return field.Substring(0, field.Length - suffix.Length);
-            return field.Trim();
-        }
-
-        private static bool TryParseInvalidFieldValue(string text, out string fieldName)
-        {
-            fieldName = null;
-            if (string.IsNullOrWhiteSpace(text))
-                return false;
-
-            const string marker = "not valid for field ";
-            int idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-                return false;
-
-            int start = idx + marker.Length;
-            int end = start;
-            while (end < text.Length)
-            {
-                char c = text[end];
-                if (c == '<' || c == '"' || c == '\'' || c == '\r' || c == '\n' || c == '.')
-                    break;
-                end++;
-            }
-
-            fieldName = text.Substring(start, end - start).Trim();
-            return !string.IsNullOrWhiteSpace(fieldName);
+                SyncLog.Debug(log, "  Detalle: " + extra);
         }
 
         private static string TruncateForLog(string text, int max)
@@ -804,26 +763,6 @@ namespace SigmabotSync.Application.FileExtraction
             while (limpio.IndexOf("  ", StringComparison.Ordinal) >= 0)
                 limpio = limpio.Replace("  ", " ");
             return limpio.Trim();
-        }
-
-        private static string TryParseQuotedValueBefore(string text, string marker)
-        {
-            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(marker))
-                return null;
-            int idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            if (idx <= 0)
-                return null;
-            int close = text.LastIndexOf('\'', idx - 1);
-            if (close < 0)
-                close = text.LastIndexOf('"', idx - 1);
-            if (close <= 0)
-                return null;
-            char quote = text[close];
-            int open = text.LastIndexOf(quote, close - 1);
-            if (open < 0 || open >= close)
-                return null;
-            string valor = text.Substring(open + 1, close - open - 1).Trim();
-            return string.IsNullOrWhiteSpace(valor) ? null : valor;
         }
 
         /// <summary>
@@ -1032,7 +971,7 @@ namespace SigmabotSync.Application.FileExtraction
                 string id = field.Identifier.Trim();
                 if (useAutoNumber && string.Equals(id, "DocumentNumber", StringComparison.OrdinalIgnoreCase))
                     continue;
-                if (!ShouldEmitRegisterSchemaIdentifier(id))
+                if (!ShouldEmitRegisterSchemaIdentifier(id) && !IsDefaultedProjectSingleSelect(id))
                     continue;
                 if (ShouldSkipStandardRegisterIdentifierInFavorOfProjectSingleSelect(id))
                     continue;
@@ -1087,6 +1026,9 @@ namespace SigmabotSync.Application.FileExtraction
                     continue;
 
                 string value = ResolveProjectSingleSelectValue(row, columnas, xmlSingleSelect);
+                if (string.IsNullOrWhiteSpace(value)
+                    && string.Equals(xmlSingleSelect, XmlNameEstatusBimSingleSelect, StringComparison.OrdinalIgnoreCase))
+                    value = DefaultEstatusBimWhenEmpty;
                 if (string.IsNullOrWhiteSpace(value)) continue;
                 if (!emitted.Add(xmlSingleSelect)) continue;
                 sb.Append("<").Append(xmlSingleSelect).Append(">")
@@ -1110,15 +1052,45 @@ namespace SigmabotSync.Application.FileExtraction
                     .Append("</").Append(colName).Append(">");
             }
 
-            string tipoDeDocumento = ResolveProjectSingleSelectValue(row, columnas, XmlNameTipoDeDocumentoSingleSelect);
-            if (string.IsNullOrWhiteSpace(tipoDeDocumento))
-                tipoDeDocumento = DefaultTipoDeDocumentoSingleSelectValue;
+            string tipoDeDocumento = ResolveTipoDeDocumentoForAconex(row, columnas);
 
             sb.Append("<").Append(XmlNameTipoDeDocumentoSingleSelect).Append(">")
                 .Append(EscapeXml(tipoDeDocumento.Trim()))
                 .Append("</").Append(XmlNameTipoDeDocumentoSingleSelect).Append(">");
 
+            AppendFixedProjectSingleSelect(sb, row, columnas, XmlNameOrigenSingleSelect, DefaultOrigenSingleSelectValue);
+            AppendFixedProjectSingleSelect(sb, row, columnas, XmlNameEstadoRedLineSingleSelect, DefaultEstadoRedLineSingleSelectValue);
+            foreach ((string xmlSingleSelect, string valor) in TemporaryMissingProjectFields)
+                AppendFixedProjectSingleSelect(sb, row, columnas, xmlSingleSelect, valor);
+
             ValidateMandatoryProjectSingleSelectFields(row, columnas, registerSchema);
+        }
+
+        private static string ResolveTipoDeDocumentoForAconex(DataRow row, DataColumnCollection columnas)
+        {
+            string value = ResolveProjectSingleSelectValue(row, columnas, XmlNameTipoDeDocumentoSingleSelect);
+            if (string.IsNullOrWhiteSpace(value)
+                || string.Equals(value.Trim(), "Certificado", StringComparison.OrdinalIgnoreCase))
+                return DefaultTipoDeDocumentoSingleSelectValue;
+            return value.Trim();
+        }
+
+        private static void AppendFixedProjectSingleSelect(
+            StringBuilder sb,
+            DataRow row,
+            DataColumnCollection columnas,
+            string xmlSingleSelect,
+            string defaultValue)
+        {
+            string value = ResolveProjectSingleSelectValue(row, columnas, xmlSingleSelect);
+            if (string.IsNullOrWhiteSpace(value))
+                value = defaultValue;
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            sb.Append("<").Append(xmlSingleSelect).Append(">")
+                .Append(EscapeXml(value.Trim()))
+                .Append("</").Append(xmlSingleSelect).Append(">");
         }
 
         /// <summary>Obtiene el valor DataLake para un campo de proyecto <c>*_singleSelect</c> (p. ej. columna <c>PWP</c> → <c>Pwp_singleSelect</c>).</summary>
@@ -1194,6 +1166,8 @@ namespace SigmabotSync.Application.FileExtraction
                 if (!IsProjectFieldSingleSelectColumn(id)) continue;
                 if (!string.Equals(field.MandatoryStatus, "MANDATORY", StringComparison.OrdinalIgnoreCase)) continue;
                 if (string.Equals(id, XmlNameTipoDeDocumentoSingleSelect, StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(id, XmlNameOrigenSingleSelect, StringComparison.OrdinalIgnoreCase)) continue;
+                if (IsEstadoRedLineField(id)) continue;
 
                 string value = ResolveProjectSingleSelectValue(row, columnas, id);
                 if (!string.IsNullOrWhiteSpace(value)) continue;
@@ -1424,8 +1398,32 @@ namespace SigmabotSync.Application.FileExtraction
             }
         }
 
+        private static bool IsEstadoRedLineField(string identifier)
+        {
+            if (string.IsNullOrWhiteSpace(identifier)) return false;
+            string id = identifier.Trim();
+            const string suffix = "_singleSelect";
+            if (id.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && id.Length > suffix.Length)
+                id = id.Substring(0, id.Length - suffix.Length);
+            return id.IndexOf("RedLine", StringComparison.OrdinalIgnoreCase) >= 0
+                || id.IndexOf("EstadoDeControl", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsDefaultedProjectSingleSelect(string identifier) =>
+            string.Equals(identifier, XmlNameOrigenSingleSelect, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(identifier, "Origen", StringComparison.OrdinalIgnoreCase)
+            || IsEstadoRedLineField(identifier);
+
         private static string GetGenericRegisterFieldValue(DataRow row, DataColumnCollection columnas, string identifier, string dataType)
         {
+            if (IsEstadoRedLineField(identifier))
+            {
+                string desdeFila = ResolveProjectSingleSelectValue(row, columnas, identifier);
+                if (!string.IsNullOrWhiteSpace(desdeFila))
+                    return desdeFila;
+                return DefaultEstadoRedLineSingleSelectValue;
+            }
+
             if (ShouldSkipStandardRegisterIdentifierInFavorOfProjectSingleSelect(identifier))
                 return null;
 
@@ -1446,7 +1444,24 @@ namespace SigmabotSync.Application.FileExtraction
                 return ResolveAuthorForAconex(row, columnas);
 
             if (IsProjectFieldSingleSelectColumn(identifier))
-                return ResolveProjectSingleSelectValue(row, columnas, identifier);
+            {
+                if (string.Equals(identifier, XmlNameTipoDeDocumentoSingleSelect, StringComparison.OrdinalIgnoreCase))
+                    return ResolveTipoDeDocumentoForAconex(row, columnas);
+
+                string desdeFila = ResolveProjectSingleSelectValue(row, columnas, identifier);
+                if (!string.IsNullOrWhiteSpace(desdeFila))
+                    return desdeFila;
+                if (string.Equals(identifier, XmlNameOrigenSingleSelect, StringComparison.OrdinalIgnoreCase))
+                    return DefaultOrigenSingleSelectValue;
+                if (string.Equals(identifier, XmlNameEstadoRedLineSingleSelect, StringComparison.OrdinalIgnoreCase))
+                    return DefaultEstadoRedLineSingleSelectValue;
+                return null;
+            }
+
+            if (string.Equals(identifier, "Origen", StringComparison.OrdinalIgnoreCase))
+                return DefaultOrigenSingleSelectValue;
+            if (string.Equals(identifier, "EstadoDeControlRedLine", StringComparison.OrdinalIgnoreCase))
+                return DefaultEstadoRedLineSingleSelectValue;
 
             return null;
         }

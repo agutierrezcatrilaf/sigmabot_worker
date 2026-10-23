@@ -130,7 +130,7 @@ namespace SigmabotSync.Console
             {
                 File.AppendAllText(
                     _executionLogPath,
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] === Inicio ejecución IdTrabajo={idTrabajo}, IdEjecucion={idEjecucion} ===" + Environment.NewLine);
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] === Inicio de la ejecución ===" + Environment.NewLine);
             }
             catch
             {
