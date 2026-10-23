@@ -38,6 +38,7 @@ namespace SigmabotSync.Application.Extraction
 
         private Dictionary<string, string> _config;
         private readonly SqlConnection _dbConWorkflow;
+        private readonly ExtraccionErroresUsuario _errores = new ExtraccionErroresUsuario();
         private readonly IAconexHttpGetPort _httpGet;
 
         public WorkflowExtractionWorker(Dictionary<string, string> config, string connectionString, IAconexHttpGetPort httpGet)
@@ -45,6 +46,17 @@ namespace SigmabotSync.Application.Extraction
             _config = config;
             _dbConWorkflow = new SqlConnection(connectionString);
             _httpGet = httpGet ?? throw new ArgumentNullException(nameof(httpGet));
+        }
+
+        public void EscribirErroresUsuario()
+        {
+            _errores.Escribir();
+        }
+
+        private void ReportarFlujo(string titulo, string item, string detalle)
+        {
+            AppState.IncErroresFlujos();
+            _errores.Agregar(titulo, item, detalle);
         }
 
         public void FlujosdeTrabajo(string proyectID)
@@ -65,8 +77,7 @@ namespace SigmabotSync.Application.Extraction
             catch (Exception ex)
             {
                 // Log o manejo de error
-                ReadableLog.Error("no se pudo extraer los flujos de trabajo", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo buscar los flujos en Aconex", null, ex?.Message);
             }
         }
 
@@ -232,8 +243,7 @@ namespace SigmabotSync.Application.Extraction
                     }
                     catch (Exception ex)
                     {
-                        ReadableLog.Error("no se pudo guardar los flujos en la base", ex?.Message);
-                        AppState.IncErroresFlujos();
+                        ReportarFlujo("No se pudo guardar los flujos en la base de datos", null, ex?.Message);
                         Utilities.Wlog($"Flujos: detalle SQL ({modulo}): {Utilities.TruncateForLog(sql, 400)}", 1);
                     }
 
@@ -298,8 +308,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo cargar los usuarios", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo actualizar los usuarios del proyecto", null, ex?.Message);
             }
         }
 
@@ -341,8 +350,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer los usuarios del proyecto en Aconex", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo actualizar los usuarios del proyecto", null, ex?.Message);
             }
         }
 
@@ -366,8 +374,10 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo guardar el usuario " + (user["UserName"]?.InnerText ?? user["UserId"]?.InnerText ?? ""), ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo(
+                    "No se pudo actualizar los usuarios del proyecto",
+                    user["UserName"]?.InnerText ?? user["UserId"]?.InnerText,
+                    ex?.Message);
             }
         }
 
@@ -385,8 +395,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo consultar el usuario " + userid, ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo actualizar los usuarios del proyecto", userid, ex?.Message);
                 return false;
             }
         }
@@ -407,8 +416,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo guardar los usuarios del proyecto", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo actualizar los usuarios del proyecto", null, ex?.Message);
             }
         }
 
@@ -448,8 +456,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer los flujos ya guardados", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo leer los flujos ya guardados", null, ex?.Message);
             }
         }
 
@@ -500,8 +507,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer los pasos de flujo ya guardados", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo leer los flujos ya guardados", null, ex?.Message);
             }
         }
 
@@ -540,8 +546,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer los flujos ya guardados en la base", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo leer los flujos ya guardados", null, ex?.Message);
             }
         }
 
@@ -571,7 +576,7 @@ namespace SigmabotSync.Application.Extraction
 
                     for (pagina = 1; pagina <= maxpages; pagina++)
                     {
-                        paginas[pagina] = GetWorkflowByPage((int)pagina, projid, authcode);
+                        paginas[pagina] = GetWorkflowByPage((int)pagina, projid, authcode, informar: false);
 
                     }
 
@@ -589,7 +594,7 @@ namespace SigmabotSync.Application.Extraction
                         {
                             if (!paginas[pagina])
                             {
-                                paginas[pagina] = GetWorkflowByPage((int)pagina, projid, authcode);
+                                paginas[pagina] = GetWorkflowByPage((int)pagina, projid, authcode, informar: true);
                             }
                         }
 
@@ -602,7 +607,6 @@ namespace SigmabotSync.Application.Extraction
                         if (tmalas > 0)
                         {
                             Utilities.Wlog("Flujos: Total paginas con errores: " + tmalas, 1);
-                            AppState.IncErroresFlujos();
                         }
                         else
                         {
@@ -622,8 +626,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo obtener los flujos desde Aconex", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo buscar los flujos en Aconex", null, ex?.Message);
             }
             finally
             {
@@ -663,14 +666,13 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo obtener la cantidad de páginas de flujos", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo buscar los flujos en Aconex", null, ex?.Message);
                 return 0;
             }
         }
 
 
-        public bool GetWorkflowByPage(long pagina, string projid, string authcode)
+        public bool GetWorkflowByPage(long pagina, string projid, string authcode, bool informar = true)
         {
             System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12;
             bool resultado = true;
@@ -705,8 +707,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer la página " + pagina + " de flujos", ex?.Message);
-                AppState.IncErroresFlujos();
+                if (informar)
+                    ReportarFlujo("No se pudo buscar los flujos en Aconex", "página " + pagina, ex?.Message);
                 resultado = false;
             }
 
@@ -894,8 +896,11 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Flujo(null, wfs?.GetAttribute("WorkflowId"), "no se pudo guardar el paso del flujo", ex?.Message);
-                AppState.IncErroresFlujos();
+                string flujoId = wfs?.GetAttribute("WorkflowId");
+                ReportarFlujo(
+                    "No se pudo guardar el paso del flujo",
+                    string.IsNullOrWhiteSpace(flujoId) ? null : "Id " + flujoId.Trim(),
+                    ex?.Message);
             }
         }
 
@@ -924,7 +929,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer la fecha " + sdate, ex?.Message);
+                Utilities.Wlog("No se pudo leer la fecha " + sdate + ". " + ex?.Message, 1);
                 return null;
             }
         }
@@ -941,7 +946,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer el campo " + nodo, ex?.Message);
+                Utilities.Wlog("No se pudo leer el campo " + nodo + ". " + ex?.Message, 1);
             }
             return string.Empty;
         }
@@ -971,8 +976,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo guardar los flujos en la base", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo guardar los flujos en la base de datos", null, ex?.Message);
             }
 
             SqlTransaction transaction;
@@ -1084,8 +1088,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo guardar los flujos en la base", ex?.Message);
-                AppState.IncErroresFlujos();
+                ReportarFlujo("No se pudo guardar los flujos en la base de datos", null, ex?.Message);
             }
 
             _dbConWorkflow.Close();

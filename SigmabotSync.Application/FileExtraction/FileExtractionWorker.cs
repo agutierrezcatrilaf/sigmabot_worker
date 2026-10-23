@@ -39,6 +39,9 @@ namespace SigmabotSync.Application.FileExtraction
         private int _countOmittedNoDocument;  // sin filename o documento vacio (CANNOT_DOWNLOAD_EMPTY_DOCUMENT)
         private int _countOmittedAlreadyExists;
         private int _countErrors;
+        private readonly object _erroresLock = new object();
+        private readonly List<ErrorCargaDocumento> _erroresDescarga = new List<ErrorCargaDocumento>();
+        private readonly List<string> _sinArchivo = new List<string>();
 
         /// <summary>Contadores del último <see cref="ProcessAllPagesAsync"/> completado.</summary>
         public FileExtractionResumen LastRunSummary { get; private set; }
@@ -66,14 +69,19 @@ namespace SigmabotSync.Application.FileExtraction
         {
             Action<string, int> log = (msg, nivel) => OnStatus?.Invoke(msg, nivel);
 
-            SyncLog.Info(log, "Obteniendo información de páginas...");
+            SyncLog.Info(log, "Buscando los documentos en Aconex.");
+            lock (_erroresLock)
+            {
+                _erroresDescarga.Clear();
+                _sinArchivo.Clear();
+            }
 
                 // Obtener primera página para conocer el total
                 var firstPage = await GetPageAsync(1, log);
 
                 if (firstPage == null)
                 {
-                    LogErrorTrabajo(log, "no se pudo obtener la página 1 del registro", null);
+                    SyncLog.Info(log, "No se pudo buscar los documentos en Aconex. Falló la página 1.");
                     LastRunSummary = BuildRunSummary(0);
                     return;
                 }
@@ -81,7 +89,7 @@ namespace SigmabotSync.Application.FileExtraction
                 int totalPages = firstPage.totalNumberOfPages;
                 long totalDocuments = firstPage.totalResultsCount;
 
-                SyncLog.Info(log, $"Total de documentos: {totalDocuments} en {totalPages} páginas");
+                SyncLog.Info(log, $"Se van a revisar {totalDocuments} documentos en {totalPages} páginas.");
 
                 if (totalPages == 0)
                 {
@@ -137,12 +145,18 @@ namespace SigmabotSync.Application.FileExtraction
                 projectFolder = string.Join("_", (projectFolder ?? "").Split(Path.GetInvalidFileNameChars()));
                 string destinoArchivos = Path.Combine(_config.BasePath ?? "", projectFolder);
 
-                SyncLog.Info(log,
+                SyncLog.Debug(log,
                     $"Completado: páginas={processedPages}, procesados={processedDocuments}, " +
                     $"guardados={_countSaved}, errores={_countErrors}, " +
-                    $"omitidos={totalOmitted} (sin archivo={_countOmittedNoDocument}, ya existían={_countOmittedAlreadyExists})");
-                SyncLog.Info(log,
-                    $"Destino archivos: {destinoArchivos}  (subcarpetas TipoDocumento\\DocNo\\Version)");
+                    $"omitidos={totalOmitted} (sin archivo={_countOmittedNoDocument}, ya existían={_countOmittedAlreadyExists}). Destino={destinoArchivos}");
+                List<ErrorCargaDocumento> errores;
+                List<string> sinArchivo;
+                lock (_erroresLock)
+                {
+                    errores = _erroresDescarga.ToList();
+                    sinArchivo = _sinArchivo.ToList();
+                }
+                EscribirResumenDescarga(log, processedDocuments, _countSaved, _countOmittedAlreadyExists, sinArchivo, errores, destinoArchivos);
                 LastRunSummary = BuildRunSummary(processedDocuments);
         }
 
@@ -185,8 +199,10 @@ namespace SigmabotSync.Application.FileExtraction
             }
             catch (Exception ex)
             {
-                LogErrorTrabajo(log, "no se pudo obtener la página " + pageNumber + " del registro", ex?.Message);
-                throw;
+                string motivo = "No se pudo buscar los documentos en Aconex. Falló la página " + pageNumber + ".";
+                SyncLog.Info(log, motivo);
+                SyncLog.Debug(log, ex.ToString());
+                throw new InvalidOperationException(motivo, ex);
             }
         }
 
@@ -232,6 +248,7 @@ namespace SigmabotSync.Application.FileExtraction
                 if (string.IsNullOrWhiteSpace(filenameFromMeta))
                 {
                     Interlocked.Increment(ref _countOmittedNoDocument);
+                    RegistrarSinArchivo(documentNumber, documentId, null);
                     SyncLog.Debug(log, $"DocNo={documentNumber} Id={documentId}: omitido (sin filename)");
                     return FileDownloadResult.Omitted;
                 }
@@ -283,6 +300,7 @@ namespace SigmabotSync.Application.FileExtraction
                         return FileDownloadResult.Saved;
                     case AconexRegisterDocumentDownloadStatus.OmittedEmptyDocument:
                         Interlocked.Increment(ref _countOmittedNoDocument);
+                        RegistrarSinArchivo(documentNumber, documentId, fileName);
                         SyncLog.Debug(log, $"DocNo={documentNumber} Id={documentId}: omitido (documento vacío)");
                         return FileDownloadResult.Omitted;
                     default:
@@ -318,6 +336,7 @@ namespace SigmabotSync.Application.FileExtraction
             if (string.IsNullOrWhiteSpace(message))
                 return "no se pudo descargar el archivo";
             if (message.IndexOf("Timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("cancelación", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("canceled", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "se agotó el tiempo de descarga";
@@ -328,10 +347,31 @@ namespace SigmabotSync.Application.FileExtraction
                 message.IndexOf("Unauthorized", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("Forbidden", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "sin autorización para descargar";
+            if (message.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("acceso denegado", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("UnauthorizedAccess", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("not enough space", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("espacio", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("could not find a part of the path", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("path is too long", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("directory", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "no se pudo guardar el archivo en la carpeta de destino";
+            if (message.IndexOf("500", StringComparison.Ordinal) >= 0 ||
+                message.IndexOf("502", StringComparison.Ordinal) >= 0 ||
+                message.IndexOf("503", StringComparison.Ordinal) >= 0 ||
+                message.IndexOf("504", StringComparison.Ordinal) >= 0)
+                return "Aconex no respondió al descargar";
             return "no se pudo descargar el archivo";
         }
 
-        private static void LogErrorDocumento(
+        private void RegistrarSinArchivo(string docNo, string documentId, string archivo)
+        {
+            string etiqueta = CargaDocumentoErrores.Etiqueta(docNo, documentId, archivo);
+            lock (_erroresLock)
+                _sinArchivo.Add(etiqueta);
+        }
+
+        private void LogErrorDocumento(
             Action<string, int> log,
             string docNo,
             string documentId,
@@ -340,22 +380,65 @@ namespace SigmabotSync.Application.FileExtraction
             string ruta,
             string detalle)
         {
-            string doc = string.IsNullOrWhiteSpace(docNo) ? "?" : docNo.Trim();
-            string id = string.IsNullOrWhiteSpace(documentId) ? "?" : documentId.Trim();
-            string archivoTxt = string.IsNullOrWhiteSpace(archivo) ? "?" : archivo.Trim();
+            string etiqueta = CargaDocumentoErrores.Etiqueta(docNo, documentId, archivo);
+            string motivoTxt = string.IsNullOrWhiteSpace(motivo) ? "no se pudo descargar el archivo" : motivo.Trim();
+            lock (_erroresLock)
+                _erroresDescarga.Add(new ErrorCargaDocumento(etiqueta, CategoriaErrorCarga.Otro, motivoTxt));
             string rutaTxt = string.IsNullOrWhiteSpace(ruta) ? "(sin ruta)" : ruta.Trim();
-            SyncLog.Info(log, $"ERROR DocNo={doc} Id={id} archivo={archivoTxt}: {motivo}. Ruta={rutaTxt}");
-            string extra = ExtraerDetalleParaLog(detalle, motivo);
+            SyncLog.Debug(log, $"ERROR {etiqueta}: {motivoTxt}. Ruta={rutaTxt}");
+            string extra = ExtraerDetalleParaLog(detalle, motivoTxt);
             if (!string.IsNullOrWhiteSpace(extra))
-                SyncLog.Info(log, "  Detalle: " + extra);
+                SyncLog.Debug(log, "  Detalle: " + extra);
         }
 
-        private static void LogErrorTrabajo(Action<string, int> log, string motivo, string detalle)
+        private static void EscribirResumenDescarga(
+            Action<string, int> log,
+            long revisados,
+            int guardados,
+            int yaDescargados,
+            IReadOnlyList<string> sinArchivo,
+            IReadOnlyList<ErrorCargaDocumento> errores,
+            string destino)
         {
-            SyncLog.Info(log, "ERROR: " + motivo);
-            string extra = ExtraerDetalleParaLog(detalle, motivo);
-            if (!string.IsNullOrWhiteSpace(extra))
-                SyncLog.Info(log, "  Detalle: " + extra);
+            SyncLog.Info(log, $"Se revisaron {revisados} documentos.");
+            SyncLog.Info(log, $"Guardados en esta ejecución: {guardados}.");
+            SyncLog.Info(log, $"Ya estaban descargados: {yaDescargados}.");
+            EscribirGrupo(log, "Sin archivo en Aconex", sinArchivo);
+            SyncLog.Info(log, $"Con error: {errores.Count}.");
+            SyncLog.Info(log, "Destino: " + destino + ".");
+
+            if (errores.Count == 0)
+            {
+                SyncLog.Info(log, "Resultado: terminó bien.");
+                return;
+            }
+
+            SyncLog.Info(log, "");
+            foreach (var motivo in errores
+                .GroupBy(error => error.Motivo, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(grupo => grupo.Count()))
+            {
+                string titulo = motivo.Key;
+                if (!string.IsNullOrEmpty(titulo))
+                    titulo = char.ToUpperInvariant(titulo[0]) + titulo.Substring(1);
+                EscribirGrupo(log, titulo, motivo.Select(error => error.Archivo).ToList());
+            }
+
+            SyncLog.Info(log, "");
+            SyncLog.Info(log, "Resultado: terminó con errores. Esos archivos no se descargaron.");
+        }
+
+        private static void EscribirGrupo(Action<string, int> log, string titulo, IReadOnlyList<string> archivos)
+        {
+            int cantidad = archivos?.Count ?? 0;
+            SyncLog.Info(log, titulo + ": " + cantidad + ".");
+            if (cantidad == 0)
+                return;
+            int visibles = Math.Min(cantidad, 30);
+            for (int i = 0; i < visibles; i++)
+                SyncLog.Info(log, "  - " + archivos[i]);
+            if (cantidad > visibles)
+                SyncLog.Info(log, "  - y " + (cantidad - visibles) + " más");
         }
 
         private static string ExtraerDetalleParaLog(string message, string motivo)

@@ -47,6 +47,8 @@ namespace SigmabotSync.Domain.Execution
     {
         public long DocumentosAconex { get; set; }
         public long DocumentosDescargados { get; set; }
+        /// <summary>Fallos al leer o guardar la metadata. No detienen la descarga de archivos.</summary>
+        public int Errores { get; set; }
     }
 
     public sealed class FileUploadResumen

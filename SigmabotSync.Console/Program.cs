@@ -243,6 +243,7 @@ namespace SigmabotSync.Console
 
                 var upload = resumenEjecucion?.FileUpload;
                 var fileExtraction = resumenEjecucion?.FileExtraction;
+                int erroresMetadata = resumenEjecucion?.DocumentExtraction?.Errores ?? 0;
                 if (upload != null && upload.Errores > 0)
                 {
                     exito = false;
@@ -251,13 +252,33 @@ namespace SigmabotSync.Console
                     SigmabotSync.Application.Common.Utilities.Wlog("=== Terminó con errores ===", 0);
                     GuardarResultadoTrabajo(connectionString, idTrabajo, exito: false, mensajeError);
                 }
-                else if (fileExtraction != null && fileExtraction.Errores > 0)
+                else if (fileExtraction != null && (fileExtraction.Errores > 0 || erroresMetadata > 0))
                 {
                     exito = false;
-                    mensajeError =
-                        $"FileExtraction: {fileExtraction.Errores} error(es), {fileExtraction.Guardados} guardado(s), {fileExtraction.Omitidos} omitido(s).";
-                    SigmabotSync.Application.Common.Utilities.Wlog(
-                        "=== Extracción finalizada con errores de descarga (IdTrabajo=" + idTrabajo + "): " + mensajeError + " ===", 0);
+                    var partes = new List<string>();
+                    if (fileExtraction.Errores > 0)
+                        partes.Add($"{fileExtraction.Errores} archivo(s) no se pudieron descargar. Guardados: {fileExtraction.Guardados}. Omitidos: {fileExtraction.Omitidos}.");
+                    if (erroresMetadata > 0)
+                        partes.Add("No se pudo actualizar la metadata de los documentos.");
+                    mensajeError = string.Join(" ", partes);
+                    SigmabotSync.Application.Common.Utilities.Wlog("=== Terminó con errores ===", 0);
+                    GuardarResultadoTrabajo(connectionString, idTrabajo, exito: false, mensajeError);
+                }
+                else if (resumenEjecucion?.FullExtraction != null && resumenEjecucion.FullExtraction.Errores > 0)
+                {
+                    exito = false;
+                    var full = resumenEjecucion.FullExtraction;
+                    var partesExtraccion = new List<string>();
+                    if (full.ErroresDocumentos > 0)
+                        partesExtraccion.Add("No se pudieron actualizar los documentos.");
+                    if (full.ErroresCorreos > 0)
+                        partesExtraccion.Add("No se pudieron actualizar los correos.");
+                    if (full.ErroresFlujos > 0)
+                        partesExtraccion.Add("No se pudieron actualizar los flujos de trabajo.");
+                    mensajeError = partesExtraccion.Count > 0
+                        ? string.Join(" ", partesExtraccion)
+                        : "La extracción terminó con errores.";
+                    SigmabotSync.Application.Common.Utilities.Wlog("=== Terminó con errores ===", 0);
                     GuardarResultadoTrabajo(connectionString, idTrabajo, exito: false, mensajeError);
                 }
                 else
@@ -461,10 +482,12 @@ namespace SigmabotSync.Console
             string projectName = ObtenerNombreProyectoParaCarpeta(connectionString, trabajoConfig);
             string basePath = !string.IsNullOrWhiteSpace(trabajoConfig.BasePath) ? trabajoConfig.BasePath.Trim() : null;
 
-            SigmabotSync.Application.Common.Utilities.Wlog("Configuración FileExtraction (IdTrabajo=" + trabajoConfig.IdTrabajo + "):", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Proyecto={projectName}, IdProyecto={projectId}, BasePath={basePath ?? "(default)"}", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Credencial Aconex: {credAconex.Nombre} ({credAconex.Aconex_Instancia})", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Credencial BD: {credBd.Nombre}", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog("Proyecto " + projectName + ".", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog(
+                "Configuración FileExtraction (IdTrabajo=" + trabajoConfig.IdTrabajo + "): Proyecto=" + projectName
+                + ", IdProyecto=" + projectId + ", BasePath=" + (basePath ?? "(default)")
+                + ", Credencial Aconex=" + credAconex.Nombre + " (" + credAconex.Aconex_Instancia + ")"
+                + ", Credencial BD=" + credBd.Nombre, 1);
             SigmabotSync.Application.Common.Utilities.Wlog("", 0);
 
             var config = FileExtractionConfig.FromCredencial(credAconex, projectId, basePath);
@@ -485,7 +508,8 @@ namespace SigmabotSync.Console
 
                 worker.OnStatus += (status, nivel) =>
                 {
-                    SigmabotSync.Application.Common.Utilities.Wlog($"[FileExtraction] {status}", nivel);
+                    string linea = nivel == 0 ? status : "[FileExtraction] " + status;
+                    SigmabotSync.Application.Common.Utilities.Wlog(linea, nivel);
                 };
 
                 await worker.ProcessAllPagesAsync();
@@ -536,7 +560,7 @@ namespace SigmabotSync.Console
             if (!string.IsNullOrWhiteSpace(connectionStringDocs))
             {
                 SigmabotSync.Application.Common.Utilities.Wlog("", 0);
-                SigmabotSync.Application.Common.Utilities.Wlog("[DocumentExtraction] Sincronizando metadata de documentos en BD...", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("Actualizando la metadata de los documentos.", 0);
                 AppState.ResetExtractionCounters();
 
                 var docConfig = ExtractionConfig.FromCredenciales(
@@ -549,26 +573,30 @@ namespace SigmabotSync.Console
                 using (var registerSearchPort = new AconexRegisterSearchAdapter())
                 {
                     var docWorker = new DocumentExtractionWorker(docConfig.ToDictionary(), connectionStringDocs, registerSearchPort);
-                    docWorker.Documentos(projectId);
+                    docWorker.DocumentosParaUsuario(projectId);
+                    docWorker.EscribirResumenMetadataUsuario();
                 }
 
                 etapasEjecutadas.Add("DocumentExtraction");
                 var resumenDocs = new DocumentExtractionResumen
                 {
                     DocumentosAconex = AppState.TotDoctosAconex,
-                    DocumentosDescargados = AppState.totDoctosDescar
+                    DocumentosDescargados = AppState.totDoctosDescar,
+                    Errores = AppState.erroresDocumentos
                 };
                 string bdLabel = !string.IsNullOrWhiteSpace(credBd.BD_BaseDatos)
                     ? $"{credBd.BD_Servidor}/{credBd.BD_BaseDatos}"
                     : (credBd.Nombre ?? "BD");
                 SigmabotSync.Application.Common.Utilities.Wlog(
-                    $"[DocumentExtraction] Completado: aconex={resumenDocs.DocumentosAconex}, " +
-                    $"persistidos={resumenDocs.DocumentosDescargados} → tabla Documentos ({bdLabel})", 0);
+                    "Detalle metadata: aconex=" + resumenDocs.DocumentosAconex
+                    + ", persistidos=" + resumenDocs.DocumentosDescargados
+                    + ", errores=" + resumenDocs.Errores
+                    + ", tabla Documentos (" + bdLabel + ")", 1);
                 return resumenDocs;
             }
             else
             {
-                SigmabotSync.Application.Common.Utilities.Wlog("[DocumentExtraction] Omitido (credencial BD sin Servidor/BaseDatos)", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("No se actualizó la metadata: el trabajo no tiene base de datos.", 0);
             }
 
             return null;
@@ -692,11 +720,13 @@ namespace SigmabotSync.Console
                 : (credBd.Nombre ?? "BD");
             int diasLookbackCorreos = trabajoConfig.ResolverDiasLookbackCorreos();
 
-            SigmabotSync.Application.Common.Utilities.Wlog("Configuración FullExtraction (IdTrabajo=" + trabajoConfig.IdTrabajo + "):", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Proyecto={projectName}, IdProyecto={projectId}", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Credencial Aconex: {credAconex.Nombre} ({credAconex.Aconex_Instancia})", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  Credencial BD: {credBd.Nombre} → {bdLabel}", 0);
-            SigmabotSync.Application.Common.Utilities.Wlog($"  DiasLookbackCorreos={diasLookbackCorreos}", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog("Proyecto " + projectName + ".", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog(
+                "Configuración FullExtraction (IdTrabajo=" + trabajoConfig.IdTrabajo + "): Proyecto=" + projectName
+                + ", IdProyecto=" + projectId
+                + ", Credencial Aconex=" + credAconex.Nombre + " (" + credAconex.Aconex_Instancia + ")"
+                + ", Credencial BD=" + credBd.Nombre + " → " + bdLabel
+                + ", DiasLookbackCorreos=" + diasLookbackCorreos, 1);
             SigmabotSync.Application.Common.Utilities.Wlog("", 0);
 
             AppState.ResetExtractionCounters();
@@ -712,36 +742,46 @@ namespace SigmabotSync.Console
             using (var registerSearchPort = new AconexRegisterSearchAdapter())
             using (var httpGetPort = new AconexHttpGetAdapter())
             {
-                SigmabotSync.Application.Common.Utilities.Wlog("[FullExtraction] Etapa Documentos...", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("Actualizando los documentos.", 0);
                 var docWorker = new DocumentExtractionWorker(configDict, connectionStringDocs, registerSearchPort);
-                docWorker.Documentos(projectId);
+                docWorker.DocumentosParaUsuario(projectId, comoDocumentos: true);
+                docWorker.EscribirResumenMetadataUsuario();
                 etapasEjecutadas.Add("Documentos");
                 SigmabotSync.Application.Common.Utilities.Wlog(
-                    $"[FullExtraction] Documentos completado: aconex={AppState.TotDoctosAconex}, persistidos={AppState.totDoctosDescar}, errores={AppState.erroresDocumentos} → tabla Documentos ({bdLabel})", 0);
+                    "Detalle documentos: aconex=" + AppState.TotDoctosAconex
+                    + ", persistidos=" + AppState.totDoctosDescar
+                    + ", errores=" + AppState.erroresDocumentos
+                    + ", tabla Documentos (" + bdLabel + ")", 1);
 
-                //SigmabotSync.Application.Common.Utilities.Wlog("[FullExtraction] Etapa ProcessIncidents...", 0);
-                //var incidentWorker = new IncidentExtractionWorker(configDict, connectionStringDocs, httpGetPort);
-                //incidentWorker.ProcessIncidents(projectId);
-                //etapasEjecutadas.Add("ProcessIncidents");
-
-                SigmabotSync.Application.Common.Utilities.Wlog("[FullExtraction] Etapa Correos...", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("Actualizando los correos.", 0);
                 var mailWorker = new MailExtractionWorker(configDict, connectionStringDocs, httpGetPort);
                 mailWorker.Correos(projectId);
                 etapasEjecutadas.Add("Correos");
+                EscribirResumenCorreos(mailWorker);
                 SigmabotSync.Application.Common.Utilities.Wlog(
-                    $"[FullExtraction] Correos completado: " +
-                    $"inbox aconex={AppState.totalCorreosRecibidosAconex} proc={AppState.totalCorreosRecibidosProcesados} omitidos={AppState.totalCorreosRecibidosDescartados}; " +
-                    $"sent aconex={AppState.totalCorreosEnviadosAconex} proc={AppState.totalCorreosEnviadosProcesados} omitidos={AppState.totalCorreosEnviadosDescartados}; " +
-                    $"errores={AppState.erroresCorreos} → tablas CorreosRecibidos/CorreosEnviados ({bdLabel})", 0);
+                    "Detalle correos: inbox aconex=" + AppState.totalCorreosRecibidosAconex
+                    + " nuevos=" + AppState.totalCorreosRecibidosProcesados
+                    + " ya estaban=" + AppState.totalCorreosRecibidosDescartados
+                    + "; enviados aconex=" + AppState.totalCorreosEnviadosAconex
+                    + " nuevos=" + AppState.totalCorreosEnviadosProcesados
+                    + " ya estaban=" + AppState.totalCorreosEnviadosDescartados
+                    + "; errores=" + AppState.erroresCorreos
+                    + " (" + bdLabel + ")", 1);
 
-                SigmabotSync.Application.Common.Utilities.Wlog("[FullExtraction] Etapa FlujosdeTrabajo...", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("", 0);
+                SigmabotSync.Application.Common.Utilities.Wlog("Actualizando los flujos de trabajo.", 0);
                 var workflowWorker = new WorkflowExtractionWorker(configDict, connectionStringDocs, httpGetPort);
                 workflowWorker.FlujosdeTrabajo(projectId);
                 etapasEjecutadas.Add("FlujosdeTrabajo");
+                EscribirResumenFlujos(workflowWorker);
                 SigmabotSync.Application.Common.Utilities.Wlog(
-                    $"[FullExtraction] Flujos completado: flujos aconex={AppState.totFlujosAconex} persistidos={AppState.totFlujosDescar}; " +
-                    $"pasos aconex={AppState.totPasosFlujosAconex} persistidos={AppState.totPasosFlujosDescar}; " +
-                    $"errores={AppState.erroresFlujos} → tablas FlujosdeTrabajo/PasosFlujosdeTrabajo ({bdLabel})", 0);
+                    "Detalle flujos: flujos aconex=" + AppState.totFlujosAconex
+                    + " persistidos=" + AppState.totFlujosDescar
+                    + "; pasos aconex=" + AppState.totPasosFlujosAconex
+                    + " persistidos=" + AppState.totPasosFlujosDescar
+                    + "; errores=" + AppState.erroresFlujos
+                    + " (" + bdLabel + ")", 1);
             }
 
             var fullResumen = new FullExtractionResumen
@@ -765,18 +805,62 @@ namespace SigmabotSync.Console
             };
 
             SigmabotSync.Application.Common.Utilities.Wlog(
-                $"[FullExtraction] Completado: docs={fullResumen.DocumentosDescargados}/{fullResumen.DocumentosAconex}, " +
-                $"correos inbox={fullResumen.CorreosRecibidosProcesados}/{fullResumen.CorreosRecibidosAconex} (omitidos={fullResumen.CorreosRecibidosDescartados}), " +
-                $"sent={fullResumen.CorreosEnviadosProcesados}/{fullResumen.CorreosEnviadosAconex} (omitidos={fullResumen.CorreosEnviadosDescartados}), " +
-                $"flujos={fullResumen.FlujosDescargados}/{fullResumen.FlujosAconex}, " +
-                $"pasos={fullResumen.PasosFlujosDescargados}/{fullResumen.PasosFlujosAconex}, " +
-                $"errores={fullResumen.Errores} (docs={fullResumen.ErroresDocumentos}, correos={fullResumen.ErroresCorreos}, flujos={fullResumen.ErroresFlujos})", 0);
+                "Detalle extracción: docs=" + fullResumen.DocumentosDescargados + "/" + fullResumen.DocumentosAconex
+                + ", correos recibidos=" + fullResumen.CorreosRecibidosProcesados + "/" + fullResumen.CorreosRecibidosAconex
+                + " (ya estaban=" + fullResumen.CorreosRecibidosDescartados + ")"
+                + ", enviados=" + fullResumen.CorreosEnviadosProcesados + "/" + fullResumen.CorreosEnviadosAconex
+                + " (ya estaban=" + fullResumen.CorreosEnviadosDescartados + ")"
+                + ", flujos=" + fullResumen.FlujosDescargados + "/" + fullResumen.FlujosAconex
+                + ", pasos=" + fullResumen.PasosFlujosDescargados + "/" + fullResumen.PasosFlujosAconex
+                + ", errores=" + fullResumen.Errores, 1);
 
             return Task.FromResult(new EjecucionResumen
             {
                 Tipo = TipoTrabajoIds.FullExtraction,
                 FullExtraction = fullResumen
             });
+        }
+
+        private static void EscribirResumenCorreos(MailExtractionWorker worker)
+        {
+            SigmabotSync.Application.Common.Utilities.Wlog(
+                "Recibidos: " + AppState.totalCorreosRecibidosAconex
+                + ". Nuevos: " + AppState.totalCorreosRecibidosProcesados
+                + ". Ya estaban: " + AppState.totalCorreosRecibidosDescartados + ".", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog(
+                "Enviados: " + AppState.totalCorreosEnviadosAconex
+                + ". Nuevos: " + AppState.totalCorreosEnviadosProcesados
+                + ". Ya estaban: " + AppState.totalCorreosEnviadosDescartados + ".", 0);
+            if (AppState.erroresCorreos == 0)
+            {
+                long nuevos = AppState.totalCorreosRecibidosProcesados + AppState.totalCorreosEnviadosProcesados;
+                string resultado = nuevos == 0
+                    ? "Resultado: no había correos nuevos."
+                    : "Resultado: se guardaron los correos nuevos.";
+                SigmabotSync.Application.Common.Utilities.Wlog(resultado, 0);
+                return;
+            }
+
+            SigmabotSync.Application.Common.Utilities.Wlog("Con error: " + AppState.erroresCorreos + ".", 0);
+            worker.EscribirErroresUsuario();
+            SigmabotSync.Application.Common.Utilities.Wlog("", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog("Resultado: no se pudieron guardar todos los correos.", 0);
+        }
+
+        private static void EscribirResumenFlujos(WorkflowExtractionWorker worker)
+        {
+            SigmabotSync.Application.Common.Utilities.Wlog("Flujos actualizados: " + AppState.totFlujosDescar + ".", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog("Pasos actualizados: " + AppState.totPasosFlujosDescar + ".", 0);
+            if (AppState.erroresFlujos == 0)
+            {
+                SigmabotSync.Application.Common.Utilities.Wlog("Resultado: los flujos quedaron actualizados.", 0);
+                return;
+            }
+
+            SigmabotSync.Application.Common.Utilities.Wlog("Con error: " + AppState.erroresFlujos + ".", 0);
+            worker.EscribirErroresUsuario();
+            SigmabotSync.Application.Common.Utilities.Wlog("", 0);
+            SigmabotSync.Application.Common.Utilities.Wlog("Resultado: no se pudieron actualizar todos los flujos.", 0);
         }
 
         /// <summary>

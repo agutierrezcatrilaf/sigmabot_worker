@@ -32,6 +32,14 @@ namespace SigmabotSync.Application.Extraction
         private readonly SqlConnection _dbConDocs;
         private readonly List<DocumentFieldMapping> _fieldMappings;
         private readonly IAconexRegisterSearchPort _registerSearchPort;
+        private readonly object _lockErroresMeta = new object();
+        private readonly List<Tuple<string, string>> _erroresMeta = new List<Tuple<string, string>>();
+
+        /// <summary>Cuando es true, los fallos de metadata se agrupan para el log de usuario.</summary>
+        public bool ResumenUsuario { get; set; }
+
+        /// <summary>En la extracción completa el texto habla de documentos, no de metadata.</summary>
+        private bool _comoDocumentos;
 
         private DataTable DocumentosTmp;
         private DataTable Metadatatmp;
@@ -75,6 +83,124 @@ namespace SigmabotSync.Application.Extraction
                 .GetAwaiter()
                 .GetResult();
             dbUpdateProjectData(proyectID);
+        }
+
+        /// <summary>Igual que <see cref="Documentos"/>, pero un fallo de conexión queda en el resumen de usuario.</summary>
+        public void DocumentosParaUsuario(string proyectID, bool comoDocumentos = false)
+        {
+            ResumenUsuario = true;
+            _comoDocumentos = comoDocumentos;
+            try
+            {
+                Documentos(proyectID);
+            }
+            catch (Exception ex)
+            {
+                ReportarErrorMetadata(
+                    "no se pudo actualizar la metadata",
+                    ex?.ToString(),
+                    FraseUsuario(
+                        "No se pudo actualizar la metadata de los documentos",
+                        "No se pudo actualizar los documentos"),
+                    null);
+            }
+        }
+
+        public void EscribirResumenMetadataUsuario()
+        {
+            if (AppState.erroresDocumentos == 0)
+            {
+                Utilities.Wlog(LineaDocumentosOk(), 0);
+                return;
+            }
+
+            List<Tuple<string, string>> copia;
+            bool falloGuardado;
+            lock (_lockErroresMeta)
+            {
+                copia = _erroresMeta.ToList();
+                falloGuardado = _erroresMeta.Any(error =>
+                    error.Item1 == "No se pudo guardar la metadata en la base de datos"
+                    || error.Item1 == "No se pudo guardar los documentos en la base de datos"
+                    || error.Item1 == "No se pudo actualizar la metadata de los documentos"
+                    || error.Item1 == "No se pudo actualizar los documentos");
+            }
+
+            if (!falloGuardado && AppState.totDoctosDescar > 0)
+                Utilities.Wlog(LineaDocumentosOk(), 0);
+
+            Utilities.Wlog("", 0);
+            foreach (var grupo in copia
+                .GroupBy(error => error.Item1, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(grupo => grupo.Count()))
+            {
+                var items = grupo.Select(error => error.Item2).Where(item => !string.IsNullOrWhiteSpace(item)).ToList();
+                if (items.Count == 0)
+                {
+                    Utilities.Wlog(grupo.Key + ".", 0);
+                    continue;
+                }
+
+                Utilities.Wlog(grupo.Key + ": " + items.Count + ".", 0);
+                int visibles = Math.Min(items.Count, 30);
+                for (int i = 0; i < visibles; i++)
+                    Utilities.Wlog("  - " + items[i], 0);
+                if (items.Count > visibles)
+                    Utilities.Wlog("  - y " + (items.Count - visibles) + " más", 0);
+            }
+
+            Utilities.Wlog("", 0);
+            Utilities.Wlog(
+                _comoDocumentos
+                    ? "Resultado: los documentos terminaron con errores."
+                    : "Resultado: la metadata terminó con errores.",
+                0);
+        }
+
+        private string LineaDocumentosOk()
+        {
+            if (_comoDocumentos)
+                return "Documentos actualizados: " + AppState.totDoctosDescar + ".";
+            return "Metadata actualizada: " + AppState.totDoctosDescar + " documentos.";
+        }
+
+        private string FraseUsuario(string metadata, string documentos)
+        {
+            return _comoDocumentos ? documentos : metadata;
+        }
+
+        private void ReportarErrorMetadata(
+            string motivoActual,
+            string detalle,
+            string tituloUsuario,
+            string item,
+            string docNo = null,
+            string docId = null,
+            bool documento = false)
+        {
+            AppState.IncErroresDocumentos();
+            if (!ResumenUsuario)
+            {
+                if (documento)
+                    ReadableLog.Documento(docNo, docId, motivoActual, detalle);
+                else
+                    ReadableLog.Error(motivoActual, detalle);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(detalle))
+                Utilities.Wlog(detalle, 1);
+            lock (_lockErroresMeta)
+                _erroresMeta.Add(Tuple.Create(tituloUsuario, item));
+        }
+
+        private static string EtiquetaDocumento(string docNo, string docId)
+        {
+            if (!string.IsNullOrWhiteSpace(docNo))
+                return "N° " + docNo.Trim();
+            if (!string.IsNullOrWhiteSpace(docId))
+                return "Id " + docId.Trim();
+            return "documento sin número";
         }
 
         private void dbchecktmpTables()
@@ -146,8 +272,11 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer los documentos ya guardados", ex?.Message);
-                AppState.IncErroresDocumentos();
+                ReportarErrorMetadata(
+                    "no se pudo leer los documentos ya guardados",
+                    ex?.Message,
+                    FraseUsuario("No se pudo leer la metadata ya guardada", "No se pudo leer los documentos ya guardados"),
+                    null);
             }
         }
 
@@ -170,8 +299,11 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo obtener los documentos desde Aconex", ex?.Message);
-                AppState.IncErroresDocumentos();
+                ReportarErrorMetadata(
+                    "no se pudo obtener los documentos desde Aconex",
+                    ex?.Message,
+                    FraseUsuario("No se pudo buscar la metadata en Aconex", "No se pudo buscar los documentos en Aconex"),
+                    null);
             }
         }
 
@@ -239,8 +371,13 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo guardar los documentos en la base", ex?.Message);
-                AppState.IncErroresDocumentos();
+                ReportarErrorMetadata(
+                    "no se pudo guardar los documentos en la base",
+                    ex?.Message,
+                    FraseUsuario(
+                        "No se pudo guardar la metadata en la base de datos",
+                        "No se pudo guardar los documentos en la base de datos"),
+                    null);
             }
 
             _dbConDocs.Close();
@@ -303,8 +440,16 @@ namespace SigmabotSync.Application.Extraction
                                         }
                                         catch (Exception ex)
                                         {
-                                            ReadableLog.Documento(doc?.DocumentNumber, doc?.Id.ToString(), "no se pudo guardar el documento", ex?.Message);
-                                            AppState.IncErroresDocumentos();
+                                            string docNo = doc?.DocumentNumber;
+                                            string docId = doc?.Id.ToString();
+                                            ReportarErrorMetadata(
+                                                "no se pudo guardar el documento",
+                                                ex?.Message,
+                                                FraseUsuario("No se pudo guardar la metadata del documento", "No se pudo guardar el documento"),
+                                                EtiquetaDocumento(docNo, docId),
+                                                docNo,
+                                                docId,
+                                                documento: true);
                                         }
                                     }
                                 }
@@ -313,8 +458,11 @@ namespace SigmabotSync.Application.Extraction
                         }
                         catch (Exception ex)
                         {
-                            ReadableLog.Error("no se pudo obtener la página " + currentPage + " de documentos", ex?.Message);
-                            AppState.IncErroresDocumentos();
+                            ReportarErrorMetadata(
+                                "no se pudo obtener la página " + currentPage + " de documentos",
+                                ex?.Message,
+                                FraseUsuario("No se pudo buscar la metadata en Aconex", "No se pudo buscar los documentos en Aconex"),
+                                "página " + currentPage);
                         }
                         finally
                         {
@@ -330,8 +478,11 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo extraer los documentos", ex?.Message);
-                AppState.IncErroresDocumentos();
+                ReportarErrorMetadata(
+                    "no se pudo extraer los documentos",
+                    ex?.Message,
+                    FraseUsuario("No se pudo buscar la metadata en Aconex", "No se pudo buscar los documentos en Aconex"),
+                    null);
                 return false;
             }
         }
@@ -385,8 +536,16 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Documento(mdoc?.DocumentNumber, mdoc?.Id.ToString(), "no se pudo guardar el documento", ex?.Message);
-                AppState.IncErroresDocumentos();
+                string docNo = mdoc?.DocumentNumber;
+                string docId = mdoc?.Id.ToString();
+                ReportarErrorMetadata(
+                    "no se pudo guardar el documento",
+                    ex?.Message,
+                    FraseUsuario("No se pudo guardar la metadata del documento", "No se pudo guardar el documento"),
+                    EtiquetaDocumento(docNo, docId),
+                    docNo,
+                    docId,
+                    documento: true);
             }
         }
 

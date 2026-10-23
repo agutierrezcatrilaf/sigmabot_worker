@@ -38,6 +38,7 @@ namespace SigmabotSync.Application.Extraction
         private readonly ConcurrentBag<DestinatarioDto> _bagDestinatarios = new ConcurrentBag<DestinatarioDto>();
         private readonly ConcurrentBag<DocumentoDto> _bagDocumentosRecibidos = new ConcurrentBag<DocumentoDto>();
         private readonly ConcurrentBag<DocumentoDto> _bagDocumentosEnviados = new ConcurrentBag<DocumentoDto>();
+        private readonly ExtraccionErroresUsuario _errores = new ExtraccionErroresUsuario();
 
         private HashSet<string> _mailIdsInbox;
         private HashSet<string> _mailIdsSent;
@@ -50,6 +51,31 @@ namespace SigmabotSync.Application.Extraction
             _config = config;
             _dbConMails = new SqlConnection(connectionString);
             _httpGet = httpGet ?? throw new ArgumentNullException(nameof(httpGet));
+        }
+
+        public void EscribirErroresUsuario()
+        {
+            _errores.Escribir();
+        }
+
+        private void ReportarCorreo(string titulo, string item, string detalle)
+        {
+            AppState.IncErroresCorreos();
+            _errores.Agregar(titulo, item, detalle);
+        }
+
+        private static string EtiquetaCorreo(string mailNo, string mailId)
+        {
+            if (!string.IsNullOrWhiteSpace(mailNo))
+                return "N° " + mailNo.Trim();
+            if (!string.IsNullOrWhiteSpace(mailId))
+                return "Id " + mailId.Trim();
+            return "correo sin número";
+        }
+
+        private static string NombreBuzon(string mailbox)
+        {
+            return string.Equals(mailbox, "inbox", StringComparison.OrdinalIgnoreCase) ? "recibidos" : "enviados";
         }
 
         public void Correos(string proyectID)
@@ -197,8 +223,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer los correos ya guardados", ex?.Message);
-                AppState.IncErroresCorreos();
+                ReportarCorreo("No se pudo leer los correos ya guardados", null, ex?.Message);
             }
         }
 
@@ -239,8 +264,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo obtener la cantidad de páginas de correos", ex?.Message);
-                AppState.IncErroresCorreos();
+                ReportarCorreo("No se pudo buscar los correos en Aconex", null, ex?.Message);
                 return 0;
             }
         }
@@ -302,8 +326,7 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo guardar los correos en la base", ex?.Message);
-                AppState.IncErroresCorreos();
+                ReportarCorreo("No se pudo guardar los correos en la base de datos", null, ex?.Message);
             }
             finally
             {
@@ -395,7 +418,7 @@ namespace SigmabotSync.Application.Extraction
 
                 for (long pagina = 1; pagina <= maxpages; pagina++)
                 {
-                    bool exito = ProcesarPagina(projid, authcode, mailbox, pagina);
+                    bool exito = ProcesarPagina(projid, authcode, mailbox, pagina, informar: false);
                     if (!exito) paginasFallidas.Add(pagina);
                 }
 
@@ -403,7 +426,7 @@ namespace SigmabotSync.Application.Extraction
                 foreach (long pagina in paginasFallidas)
                 {
                     Utilities.Wlog($"[{mailbox.ToUpper()}] Reintentando página {pagina} para {projid}", 1);
-                    ProcesarPagina(projid, authcode, mailbox, pagina);
+                    ProcesarPagina(projid, authcode, mailbox, pagina, informar: true);
                 }
 
                 stopwatch.Stop();
@@ -413,12 +436,17 @@ namespace SigmabotSync.Application.Extraction
         }
 
         // Procesa una p�gina completa (correos + adjuntos) en paralelo
-        bool ProcesarPagina(string projid, string authcode, string mailbox, long pagina)
+        bool ProcesarPagina(string projid, string authcode, string mailbox, long pagina, bool informar)
         {
             try
             {
                 string pageXml = GetPageXml(projid, authcode, mailbox, pagina, _fechaInicio, _fechaFin);
-                if (string.IsNullOrWhiteSpace(pageXml)) return false;
+                if (string.IsNullOrWhiteSpace(pageXml))
+                {
+                    if (informar)
+                        ReportarCorreo("No se pudo buscar los correos en Aconex", "página " + pagina + " de " + NombreBuzon(mailbox), null);
+                    return false;
+                }
 
                 XmlDocument doc = new XmlDocument();
                 doc.LoadXml(Utilities.CleanXml(pageXml));
@@ -482,8 +510,7 @@ namespace SigmabotSync.Application.Extraction
                         }
                         catch (Exception ex)
                         {
-                            ReadableLog.Correo(mailNo, mailId, "no se pudo procesar el correo", ex?.Message);
-                            AppState.IncErroresCorreos();
+                            ReportarCorreo("No se pudo leer el correo", EtiquetaCorreo(mailNo, mailId), ex?.Message);
                         }
                     });
 
@@ -491,8 +518,8 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Error("no se pudo leer la página " + pagina + " del buzón " + mailbox, ex?.Message);
-                AppState.IncErroresCorreos();
+                if (informar)
+                    ReportarCorreo("No se pudo buscar los correos en Aconex", "página " + pagina + " de " + NombreBuzon(mailbox), ex?.Message);
                 return false;
             }
         }
@@ -541,12 +568,10 @@ namespace SigmabotSync.Application.Extraction
             }
             catch (Exception ex)
             {
-                ReadableLog.Correo(
-                    mdoc?.SelectSingleNode("MailNo")?.InnerText,
-                    mdoc?.GetAttribute("MailId"),
-                    "no se pudo guardar el correo",
+                ReportarCorreo(
+                    "No se pudo guardar el correo",
+                    EtiquetaCorreo(mdoc?.SelectSingleNode("MailNo")?.InnerText, mdoc?.GetAttribute("MailId")),
                     ex?.Message);
-                AppState.IncErroresCorreos();
             }
         }
 
@@ -670,7 +695,7 @@ namespace SigmabotSync.Application.Extraction
             var desde = hasta.AddDays(-dias);
             _fechaInicio = desde.ToString("yyyyMMdd");
             _fechaFin = hasta.ToString("yyyyMMdd");
-            Utilities.Wlog($"[Correos] Lookback={dias} días: sentdate:[{_fechaInicio} TO {_fechaFin}]", 0);
+            Utilities.Wlog($"[Correos] Lookback={dias} días: sentdate:[{_fechaInicio} TO {_fechaFin}]", 1);
         }
 
         void MapBagsToDataTables()
