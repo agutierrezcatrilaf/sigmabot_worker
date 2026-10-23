@@ -1,8 +1,8 @@
 @echo off
 setlocal
 
-REM Ajustar a la carpeta real de instalacion en servidor
-set APP_DIR=C:\Sigmabot\SigmabotSync
+REM QA: misma raiz del sitio configsigmabot, subcarpeta worker.
+set APP_DIR=E:\inetpub\wwwroot\configsigmabot\worker
 set EXE_NAME=SigmabotSync.Console.exe
 set LOG_DIR=%APP_DIR%\logs
 set LOG_FILE=%LOG_DIR%\task-run.log

@@ -1,118 +1,168 @@
-# SigmabotSync
-## Instructivo de Despliegue y Operacion
+# Cómo instalar el worker en QA
 
-**Proyecto:** SigmabotSync  
-**Documento:** Guia de despliegue para equipo receptor  
-**Version de entrega:** 1.0.0  
-**Fecha:** 2026-05-07  
-**Responsable de entrega:** ______________________
+Programa que descarga y carga archivos de Aconex. Se copia a una carpeta del servidor y Windows lo ejecuta solo, cada 1 hora.
 
----
+**Ambiente:** QA  
+**Servidor:** QAAPP06 (172.20.1.102), el mismo de la API y del sitio  
+**Versión:** 1.3.2 — 15 de octubre de 2026
 
-### Control de cambios
+## 1. Dónde queda instalado
 
-| Version | Fecha       | Descripcion                          |
-|---------|-------------|--------------------------------------|
-| 1.0.0   | 2026-05-07  | Version inicial para entrega formal. |
+| Qué | Valor para QA |
+|-----|----------------|
+| Carpeta | La definen al instalar. Sugerida: `E:\inetpub\wwwroot\configsigmabot\worker` |
+| Cuenta de Windows | SYSTEM |
+| Horario | Todos los días desde las 00:00, cada 1 hora |
+| Nombre de la tarea | SigmabotSync |
 
-## 1) Objetivo
+Ese servidor ya tiene conexión a la base de datos y al File Server. La carga y la descarga de archivos usan el mismo File Server.
 
-Este documento describe como desplegar `SigmabotSync` en servidores Windows, programar su ejecucion cada una hora mediante el Programador de tareas y validar su funcionamiento inicial.
+Esa carpeta se escribe en la variable `APP_DIR`, en `install-task.bat` y en `run-sigmabot.bat`, antes de crear la tarea. Los dos archivos tienen que tener la misma ruta. Con eso la tarea sabe dónde está `SigmabotSync.Console.exe`.
 
----
+Si usan la carpeta sugerida, queda dentro del sitio web. Hay que dejarla fuera del sitio para que nadie pueda abrir `settings.json` desde el navegador: ese archivo tiene la clave de la base de datos.
 
-## 2) Artefactos a entregar
+## 2. Qué hay que tener a mano
 
-Entregar una carpeta de release que incluya:
+- La carpeta del release `sigmabot-worker` (el programa, las DLL y la carpeta `deployment`).
+- El archivo `settings.json` que se envía junto con este instructivo. El `settings.json.example` del release es solo una plantilla vacía.
+- .NET 8, que en este servidor ya está instalado porque ahí corre la API.
+- Permiso de administrador en QAAPP06, para crear la tarea programada.
 
-- `SigmabotSync.Console.exe`
-- `SigmabotSync.Console.dll`
-- Todas las DLL dependientes necesarias para la ejecucion
-- `settings.json` configurado para el ambiente destino
-- Scripts operativos:
-  - `run-sigmabot.bat`
-  - `install-task.bat`
-  - `uninstall-task.bat`
+## 3. Cómo debe verse la carpeta
 
-**Recomendacion:** entregar siempre la carpeta completa de ejecutables y librerias (no solo el `.exe`).
+```
+E:\inetpub\wwwroot\configsigmabot\worker\
+  SigmabotSync.Console.exe
+  SigmabotSync.Console.dll
+  (el resto de DLL del release)
+  settings.json
+  deployment\
+    install-task.bat
+    run-sigmabot.bat
+    uninstall-task.bat
+  Logs\
+```
 
----
+`settings.json` va al lado del `.exe`, no dentro de `deployment`. La carpeta `Logs` se crea sola en la primera ejecución.
 
-## 3) Requisitos en servidor
+## 4. Pasos de instalación
 
-- Windows Server con permisos para crear tareas programadas.
-- Usuario de servicio con permisos de:
-  - Lectura/escritura sobre carpeta de despliegue y logs.
-  - Acceso a SQL Server para las bases requeridas por el proceso.
-  - Conectividad hacia Aconex.
-- Archivo `settings.json` con `DatabaseConnectionString` valido.
+### Paso 1. Copiar el programa
 
-### Requisitos de red y acceso
+Elegir la carpeta del servidor y copiar ahí todo el contenido del release. La sugerida es `E:\inetpub\wwwroot\configsigmabot\worker`. El ejecutable queda en esa carpeta, y los `.bat` en la subcarpeta `deployment`.
 
-- Permitir salida HTTPS hacia Aconex (puerto `443`) desde el servidor.
-- Verificar acceso a SQL Server en el puerto configurado (habitualmente `1433`).
-- Asegurar permisos de lectura/escritura en la ruta de descarga definida en `BasePath` (si aplica al trabajo).
-- Confirmar que la cuenta que ejecuta la tarea (`SYSTEM` o `SERVICE_ACCOUNT`) tenga permisos sobre carpetas locales, rutas compartidas y base de datos segun la configuracion.
-- Asegurar que, desde el contexto donde se ejecuta `SigmabotSync.Console.exe`, exista permiso de lectura y escritura sobre el `BasePath` definido para guardar archivos fisicos.
+### Paso 2. Copiar la configuración
 
----
+Copiar el `settings.json` recibido al lado del ejecutable. Con la carpeta sugerida:
 
-## 4) Comportamiento operativo del ejecutable
+`E:\inetpub\wwwroot\configsigmabot\worker\settings.json`
 
-Al ejecutarse, `SigmabotSync.Console.exe`:
+Ese archivo apunta a la base `Aconex_DataLake` y trae la misma clave de cifrado que la API, para poder leer las credenciales que ya están guardadas.
 
-1. Lee `settings.json`.
-2. Consulta trabajos pendientes segun la configuracion en base de datos.
-3. Ejecuta los trabajos activos configurados.
-4. Evita duplicar corridas cuando detecta ejecuciones en curso.
-5. Registra trazas y resultados de ejecucion.
+### Paso 3. Escribir la carpeta del ejecutable
 
-En terminos operativos: cada corrida revisa que trabajos corresponde ejecutar y procesa los pendientes.
+Abrir con el Bloc de notas `deployment\install-task.bat` y `deployment\run-sigmabot.bat`. En los dos, `APP_DIR` es la carpeta elegida en el paso 1, la que contiene `SigmabotSync.Console.exe`.
 
----
+Si usan la carpeta sugerida, déjenla así en los dos archivos:
 
-## 5) Validacion post-despliegue
+```
+set APP_DIR=E:\inetpub\wwwroot\configsigmabot\worker
+```
 
-1. Ejecutar manualmente una vez:
-   - `SigmabotSync.Console.exe`
-2. Verificar:
-   - El proceso inicia y finaliza sin error critico.
-   - Se generan logs del proceso.
-   - Se registran estados/resultados en tablas de control de ejecucion.
+Si eligen otra, reemplacen esa ruta en los dos archivos por la carpeta real. Tiene que quedar idéntica en ambos.
 
----
+En `install-task.bat` también quedan el horario y la cuenta:
 
-## 6) Programacion de tarea cada 1 hora
+```
+set RUN_MODE=SYSTEM
+set START_TIME=00:00
+set INTERVAL_HOURS=1
+```
 
-La tarea se instala mediante `install-task.bat`.  
-Este script:
+`INTERVAL_HOURS` es cada cuántas horas se repite. Acepta de 1 a 23. Con `1` el programa revisa los trabajos cada hora, a partir de las 00:00.
 
-- Crea carpeta de logs si no existe.
-- Elimina la tarea anterior (si existe).
-- Crea la tarea recurrente cada 1 hora.
+### Paso 4. Crear la tarea de Windows
 
-Antes de ejecutarlo, ajustar las variables de ambiente del script.
+Abrir el Símbolo del sistema como administrador, entrar a la subcarpeta `deployment` de la carpeta elegida y ejecutar `install-task.bat`. Con la carpeta sugerida:
 
-### Parametros editables en `install-task.bat`
+```
+cd /d E:\inetpub\wwwroot\configsigmabot\worker\deployment
+install-task.bat
+```
 
-- `TASK_NAME`: nombre de la tarea en el Programador de tareas.
-- `APP_DIR`: carpeta donde quedo desplegado el ejecutable.
-- `RUN_BAT`: ruta del script `run-sigmabot.bat`.
-- `START_TIME`: hora de inicio de la primera corrida (formato `HH:mm`).
-- `RUN_MODE`: modo de ejecucion de la tarea:
-  - `SYSTEM`: usa cuenta del sistema local (no requiere usuario/password).
-  - `SERVICE_ACCOUNT`: usa una cuenta de servicio.
-- `RUN_AS`: usuario de servicio (solo si `RUN_MODE=SERVICE_ACCOUNT`).
-- `RUN_PWD`: password de la cuenta de servicio (solo si `RUN_MODE=SERVICE_ACCOUNT`).
+Si sale bien, la última línea dice que la tarea `SigmabotSync` quedó creada, cada 1 hora, desde las 00:00, con la cuenta SYSTEM.
 
-### Recomendacion de seguridad
+Para verla: Programador de tareas de Windows, buscar `SigmabotSync`.
 
-- No almacenar credenciales reales en repositorios.
-- Completar `RUN_PWD` solo en el servidor destino y con acceso restringido.
+### Paso 5. Probarlo una vez
 
-### Ubicacion de logs
+```
+cd /d E:\inetpub\wwwroot\configsigmabot\worker
+SigmabotSync.Console.exe
+```
 
-- Log principal del aplicativo (definido en el codigo): `%APP_DIR%\Logs\SigmabotSync_yyyy-MM-dd.log`
-- Log de tarea programada (opcional, definido en `run-sigmabot.bat`): `%APP_DIR%\logs\task-run.log`
-- `APP_DIR` se define en los scripts de despliegue. Ejemplo habitual: `C:\Sigmabot\SigmabotSync`.
+Si eligieron otra carpeta, usen esa en lugar de la ruta del ejemplo.
 
+El programa lee la configuración, busca en la base los trabajos activos y procesa los que correspondan. Si ya hay una ejecución en curso, no abre otra.
+
+Quedó bien si el programa termina y aparece un archivo en `E:\inetpub\wwwroot\configsigmabot\worker\Logs`.
+
+## 5. Si hay que cambiar la frecuencia
+
+Editar `INTERVAL_HOURS` en `install-task.bat` y volver a ejecutar ese `.bat` como administrador. Por ejemplo, `6` lo deja cada 6 horas, siempre contando desde las 00:00.
+
+Para cambiar la hora de la primera ejecución del día, editar `START_TIME` con formato `HH:mm` y ejecutar de nuevo el mismo `.bat`.
+
+## 6. Si no puede leer el File Server
+
+La instalación usa la cuenta SYSTEM. Si la prueba del paso 5 no puede leer o guardar archivos en el File Server, en `install-task.bat` cambiar:
+
+```
+set RUN_MODE=SERVICE_ACCOUNT
+set RUN_AS=DOMINIO\usuario
+set RUN_PWD=la contraseña
+```
+
+La contraseña se escribe solo en el servidor. Después ejecutar otra vez `install-task.bat` como administrador.
+
+Para eliminar la tarea: ejecutar `deployment\uninstall-task.bat` como administrador.
+
+## 7. Botón Ejecutar ahora del configurador
+
+Ese botón lo habilita la API, en el mismo servidor. En el `appsettings` de la API dejar:
+
+```json
+"OnDemandExecution": {
+  "Enabled": true,
+  "WorkerExePath": "E:\\inetpub\\wwwroot\\configsigmabot\\worker\\SigmabotSync.Console.exe"
+}
+```
+
+- `Enabled` en `true` muestra el botón. En `false` no aparece.
+- `WorkerExePath` es la ruta completa del `.exe` de la carpeta elegida en el paso 1. El archivo tiene que existir. Si la carpeta no es la sugerida, cambien esta ruta.
+
+Reiniciar la API. El botón queda en Trabajos y en Historial.
+
+## 8. Dónde ver los logs
+
+La tarea de las 00:00 y el botón Ejecutar ahora usan el mismo programa y la misma carpeta de logs.
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| `Logs\SigmabotSync_yyyy-MM-dd.log` | Todo lo que hizo el programa ese día. |
+| `Logs\job-{idTrabajo}-ejec-{idEjecucion}.log` | El detalle de una ejecución. Es el archivo que muestra el historial del configurador. |
+| `Logs\task-run.log` | La salida de la tarea programada. |
+
+La carpeta de logs queda junto al ejecutable, en `Logs`. Con la carpeta sugerida es `E:\inetpub\wwwroot\configsigmabot\worker\Logs`. En `settings.json`, `Logging.Directory` queda en `Logs` y `Logging.Level` en `Info`.
+
+Para abrir el log desde el configurador, en el `appsettings` de la API incluir la carpeta y reiniciar la API:
+
+```json
+"WorkerLogs": {
+  "AllowedDirectories": [
+    "E:\\inetpub\\wwwroot\\configsigmabot\\worker\\Logs"
+  ]
+}
+```
+
+Si la carpeta del programa es otra, cambien también esa ruta. Si `AllowedDirectories` queda vacío, el configurador no abre el archivo. Después de usar Ejecutar ahora, el historial debe mostrar el `job-...` de esa corrida.

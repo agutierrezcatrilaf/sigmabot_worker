@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set TASK_NAME=SigmabotSync_Hourly
+set TASK_NAME=SigmabotSync
 
 echo Eliminando tarea "%TASK_NAME%"...
 schtasks /Delete /TN "%TASK_NAME%" /F
