@@ -4,7 +4,7 @@ Programa que descarga y carga archivos de Aconex. Se copia a una carpeta del ser
 
 **Ambiente:** QA  
 **Servidor:** QAAPP06 (172.20.1.102), el mismo de la API y del sitio  
-**Versión:** 1.3.2 — 15 de octubre de 2026
+**Versión:** 1.3.3 — 26 de octubre de 2026
 
 ## 1. Dónde queda instalado
 
