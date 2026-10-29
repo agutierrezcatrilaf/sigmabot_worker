@@ -111,6 +111,7 @@ namespace SigmabotSync.Application.Extraction
             if (AppState.erroresDocumentos == 0)
             {
                 Utilities.Wlog(LineaDocumentosOk(), 0);
+                Utilities.Wlog(LineaResultadoDocumentos(0), 0);
                 return;
             }
 
@@ -150,11 +151,7 @@ namespace SigmabotSync.Application.Extraction
             }
 
             Utilities.Wlog("", 0);
-            Utilities.Wlog(
-                _comoDocumentos
-                    ? "Resultado: los documentos terminaron con errores."
-                    : "Resultado: la metadata terminó con errores.",
-                0);
+            Utilities.Wlog(LineaResultadoDocumentos(AppState.erroresDocumentos), 0);
         }
 
         private string LineaDocumentosOk()
@@ -162,6 +159,14 @@ namespace SigmabotSync.Application.Extraction
             if (_comoDocumentos)
                 return "Documentos actualizados: " + AppState.totDoctosDescar + ".";
             return "Metadata actualizada: " + AppState.totDoctosDescar + " documentos.";
+        }
+
+        private string LineaResultadoDocumentos(int errores)
+        {
+            string estado = errores == 0
+                ? (_comoDocumentos ? "documentos completados" : "metadata completada")
+                : (_comoDocumentos ? "documentos completados con errores" : "metadata completada con errores");
+            return "Resultado: " + estado + ". Actualizados: " + AppState.totDoctosDescar + ". Errores: " + errores + ".";
         }
 
         private string FraseUsuario(string metadata, string documentos)

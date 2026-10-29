@@ -35,6 +35,7 @@ namespace SigmabotSync.Application.Common
                 Procesados = result.ProcessedMails,
                 OmitidosYaProcesados = result.SkippedAlreadyProcessed,
                 DescartadosSubject = result.SkippedSubjectFilter,
+                OmitidosPorEstado = result.SkippedByStatus,
                 Marcadores = result.PlaceholdersCreated,
                 Archivos = result.FilesApplied,
                 Errores = result.Errors

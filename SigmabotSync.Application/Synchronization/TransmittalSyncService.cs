@@ -87,7 +87,7 @@ namespace SigmabotSync.Application.Synchronization
             string mailbox = ResolveSourceMailbox(request, sourceProject);
             int corrTypeId = ResolveSourceCorrTypeId(request, sourceProject);
 
-            SyncLog.Info(log, 
+            SyncLog.Debug(log, 
                 $"Buscando transmitals {mailbox} (corrtypeid:{corrTypeId}) origen {sourceProject.Label} ({sourceProject.ProjectId}) " +
                 $"→ registro destino {targetProject.Label} ({targetProject.ProjectId}), " +
                 $"sentdate:[{fechaInicio} TO {fechaFin}] ({request.DiasLookback} días lookback)...");
@@ -115,19 +115,20 @@ namespace SigmabotSync.Application.Synchronization
                 SkippedSubjectFilter = Math.Max(0, totalListados - mails.Count)
             };
             if (totalListados != mails.Count)
-                SyncLog.Info(log, 
+                SyncLog.Debug(log, 
                     $"Transmitals en {mailbox}: {totalListados} listados, {mails.Count} tras filtro subject " +
                     $"(omitidos {result.SkippedSubjectFilter}).");
             else
-                SyncLog.Info(log, $"Transmitals encontrados en {mailbox} origen: {mails.Count}");
+                SyncLog.Debug(log, $"Transmitals encontrados en {mailbox} origen: {mails.Count}");
             if (mails.Count == 0)
             {
-                SyncLog.Info(log, 
+                SyncLog.Debug(log, 
                     $"Sin resultados. Verifique DiasLookbackTransmittal (actual={request.DiasLookback}) " +
                     $"y que el transmittal esté en {mailbox} del proyecto {sourceProject.ProjectId} " +
                     $"con corrtypeid:{corrTypeId} y sentdate entre {fechaInicio} y {fechaFin}.");
                 return result;
             }
+            SyncLog.Info(log, "Se van a revisar " + mails.Count + " transmittals.");
 
             IReadOnlyList<TransmittalSyncCampoMapeoItem> fieldMappings;
             AconexRegisterSchemaSnapshot targetSchema = null;
@@ -211,6 +212,8 @@ namespace SigmabotSync.Application.Synchronization
 
                     bool stopPassAfterLimit = false;
                     bool mailHadFailure = false;
+                    bool mailHadApply = false;
+                    int omitidosAlEntrar = result.SkippedByStatus;
                     foreach (var attachment in detail.Attachments)
                     {
                         if (maxDocsThisPass > 0 && docsProcessedThisPass >= maxDocsThisPass)
@@ -226,17 +229,20 @@ namespace SigmabotSync.Application.Synchronization
                         if (attachment.IsPlaceholder)
                         {
                             outcome = await TryRegisterPlaceholderAsync(
-                                request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, mail.MailId, mailHints, log, cancellationToken).ConfigureAwait(false);
+                                request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, mail.MailId, mailHints, result, log, cancellationToken).ConfigureAwait(false);
                             if (outcome == SyncAttachmentOutcome.Applied)
                                 result.PlaceholdersCreated++;
                         }
                         else
                         {
                             outcome = await TryApplyFileFromTransmittalAsync(
-                                request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, mail.MailId, mailHints, log, cancellationToken).ConfigureAwait(false);
+                                request, sourceProject, targetProject, targetSchema, documentCatalog, fieldMappings, attachment, mail.MailId, mailHints, result, log, cancellationToken).ConfigureAwait(false);
                             if (outcome == SyncAttachmentOutcome.Applied)
                                 result.FilesApplied++;
                         }
+
+                        if (outcome == SyncAttachmentOutcome.Applied)
+                            mailHadApply = true;
 
                         if (outcome == SyncAttachmentOutcome.Failed)
                         {
@@ -258,7 +264,9 @@ namespace SigmabotSync.Application.Synchronization
                     }
 
                     await _state.MarkMailProcessedAsync(request.IdTrabajo, sourceProject.ProjectId, mail.MailId, cancellationToken).ConfigureAwait(false);
-                    result.ProcessedMails++;
+                    bool soloOmitidosPorEstado = !mailHadApply && result.SkippedByStatus > omitidosAlEntrar;
+                    if (!soloOmitidosPorEstado)
+                        result.ProcessedMails++;
                 }
                 catch (Exception ex)
                 {
@@ -401,6 +409,7 @@ namespace SigmabotSync.Application.Synchronization
             ProyectoSyncItem sourceProject,
             TransmittalDocumentAttachment attachment,
             AconexDocumentCatalog documentCatalog,
+            TransmittalSyncProjectResult result,
             Action<string, int> log)
         {
             if (!IsLado2Source(request, sourceProject))
@@ -411,19 +420,25 @@ namespace SigmabotSync.Application.Synchronization
                 return false;
 
             string attachmentStatus = attachment?.Status?.Trim();
+            string documento = string.IsNullOrWhiteSpace(attachment?.DocumentNo)
+                ? "un documento"
+                : "el documento " + attachment.DocumentNo.Trim();
             if (string.IsNullOrWhiteSpace(attachmentStatus))
             {
+                if (result != null)
+                    result.SkippedByStatus++;
                 SyncLog.Info(log,
-                    $"  Omitido (vuelta): adjunto {attachment?.DocumentNo ?? "?"} sin Status en RegisteredDocumentAttachment.");
+                    "Se omitió " + documento + ". El transmittal no trae estado.");
                 return true;
             }
 
             if (AttachmentStatusMatchesAllowlist(attachmentStatus, allowlistRaw, documentCatalog))
                 return false;
 
+            if (result != null)
+                result.SkippedByStatus++;
             SyncLog.Info(log,
-                $"  Omitido (vuelta): Status «{attachmentStatus}» no está en IdEstatusDocumentoDestino " +
-                $"(allowlist={allowlistRaw}) — {attachment?.DocumentNo ?? "?"}.");
+                "Se omitió " + documento + ". Su estado «" + attachmentStatus + "» no está permitido en la vuelta.");
             return true;
         }
 
@@ -583,6 +598,7 @@ namespace SigmabotSync.Application.Synchronization
             TransmittalDocumentAttachment attachment,
             string mailId,
             IReadOnlyDictionary<string, string> mailHints,
+            TransmittalSyncProjectResult result,
             Action<string, int> log,
             CancellationToken cancellationToken)
         {
@@ -593,7 +609,7 @@ namespace SigmabotSync.Application.Synchronization
             }
 
             if (ShouldSkipAttachmentByStatusAllowlistForVuelta(
-                    request, sourceProject, attachment, documentCatalog, log))
+                    request, sourceProject, attachment, documentCatalog, result, log))
                 return SyncAttachmentOutcome.Skipped;
 
             string revision = string.IsNullOrWhiteSpace(attachment.Revision) ? "A" : attachment.Revision.Trim();
@@ -700,6 +716,7 @@ namespace SigmabotSync.Application.Synchronization
             TransmittalDocumentAttachment attachment,
             string mailId,
             IReadOnlyDictionary<string, string> mailHints,
+            TransmittalSyncProjectResult result,
             Action<string, int> log,
             CancellationToken cancellationToken)
         {
@@ -710,7 +727,7 @@ namespace SigmabotSync.Application.Synchronization
             }
 
             if (ShouldSkipAttachmentByStatusAllowlistForVuelta(
-                    request, sourceProject, attachment, documentCatalog, log))
+                    request, sourceProject, attachment, documentCatalog, result, log))
                 return SyncAttachmentOutcome.Skipped;
 
             string revision = string.IsNullOrWhiteSpace(attachment.Revision) ? "A" : attachment.Revision.Trim();
@@ -2832,6 +2849,8 @@ namespace SigmabotSync.Application.Synchronization
         public int ProcessedMails { get; set; }
         public int SkippedAlreadyProcessed { get; set; }
         public int SkippedSubjectFilter { get; set; }
+        /// <summary>Documentos de la vuelta omitidos porque su estado no es Emitido para Revisión.</summary>
+        public int SkippedByStatus { get; set; }
         public int PlaceholdersCreated { get; set; }
         public int FilesApplied { get; set; }
         public int Errors { get; set; }

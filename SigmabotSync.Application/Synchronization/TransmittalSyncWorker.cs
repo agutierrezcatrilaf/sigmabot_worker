@@ -86,7 +86,7 @@ namespace SigmabotSync.Application.Synchronization
 
 
 
-            OnStatus?.Invoke($"ProjectSync cross-project: {proyectos.Count} proyecto(s), lookback {request.DiasLookback} días.", 0);
+            OnStatus?.Invoke("Buscando los transmittals de los últimos " + request.DiasLookback + " días.", 0);
 
 
 
@@ -112,7 +112,7 @@ namespace SigmabotSync.Application.Synchronization
 
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    OnStatus?.Invoke($"--- Origen: {source.Label} ({source.ProjectId}) → Destino: {target.Label} ({target.ProjectId}) ---", 0);
+                    OnStatus?.Invoke(source.Label + " → " + target.Label + ".", 0);
 
 
 
@@ -138,13 +138,7 @@ namespace SigmabotSync.Application.Synchronization
 
 
 
-                    OnStatus?.Invoke(
-
-                        $"Resumen {source.Label} → {target.Label}: procesados={result.ProcessedMails}, " +
-
-                        $"ya_procesados={result.SkippedAlreadyProcessed}, marcadores={result.PlaceholdersCreated}, archivos={result.FilesApplied}, errores={result.Errors}",
-
-                        0);
+                    EscribirResumenDireccion(result, (msg, nivel) => OnStatus?.Invoke(msg, nivel));
 
                 }
 
@@ -152,10 +146,42 @@ namespace SigmabotSync.Application.Synchronization
 
 
 
-            OnStatus?.Invoke("Sincronización cross-project finalizada.", 0);
+            int sincronizados = resultados.Sum(r => r.ProcessedMails);
+            int errores = resultados.Sum(r => r.Errors);
+            int omitidosEstado = resultados.Sum(r => r.SkippedByStatus);
+            string estado = errores == 0
+                ? "sincronización completada"
+                : "sincronización completada con errores";
+            string linea = "Resultado: " + estado + ". Sincronizados: " + sincronizados + ". Errores: " + errores + ".";
+            if (omitidosEstado > 0)
+                linea += " Omitidos por estado: " + omitidosEstado + ".";
+            OnStatus?.Invoke(linea, 0);
 
             return resultados;
 
+        }
+
+        private static void EscribirResumenDireccion(TransmittalSyncProjectResult result, Action<string, int> log)
+        {
+            if (result == null)
+                return;
+
+            if (result.TotalMails == 0 && result.SkippedAlreadyProcessed == 0 && result.Errors == 0)
+            {
+                log("No había transmittals nuevos.", 0);
+                return;
+            }
+
+            log("Transmittals: " + result.TotalMails
+                + ". Sincronizados: " + result.ProcessedMails
+                + ". Ya estaban: " + result.SkippedAlreadyProcessed + ".", 0);
+            if (result.SkippedSubjectFilter > 0)
+                log("Omitidos por asunto: " + result.SkippedSubjectFilter + ".", 0);
+            if (result.SkippedByStatus > 0)
+                log("Omitidos por estado: " + result.SkippedByStatus + ".", 0);
+            log("Marcadores: " + result.PlaceholdersCreated + ". Archivos: " + result.FilesApplied + ".", 0);
+            if (result.Errors > 0)
+                log("Con error: " + result.Errors + ".", 0);
         }
 
     }

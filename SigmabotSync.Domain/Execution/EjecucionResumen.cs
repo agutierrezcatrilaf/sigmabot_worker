@@ -28,6 +28,8 @@ namespace SigmabotSync.Domain.Execution
         public int OmitidosYaProcesados { get; set; }
         /// <summary>Transmitals listados que no pasan filtro subject (no son «Final»).</summary>
         public int DescartadosSubject { get; set; }
+        /// <summary>Documentos de la vuelta omitidos porque su estado no es Emitido para Revisión.</summary>
+        public int OmitidosPorEstado { get; set; }
         public int Marcadores { get; set; }
         public int Archivos { get; set; }
         public int Errores { get; set; }

@@ -219,7 +219,7 @@ namespace SigmabotSync.Application.FileExtraction
 
             if (errores.Count == 0)
             {
-                SyncLog.Info(log, "Resultado: terminó bien.");
+                SyncLog.Info(log, "Resultado: carga completada. Enviados: " + enviados + ". Errores: 0.");
                 return;
             }
 
@@ -251,7 +251,7 @@ namespace SigmabotSync.Application.FileExtraction
             }
 
             SyncLog.Info(log, "");
-            SyncLog.Info(log, "Resultado: terminó con errores. Esos archivos no se enviaron.");
+            SyncLog.Info(log, "Resultado: carga completada con errores. Enviados: " + enviados + ". Errores: " + errores.Count + ".");
         }
 
         private static void EscribirGrupo(Action<string, int> log, string titulo, IReadOnlyList<string> archivos, string sangria = "")
