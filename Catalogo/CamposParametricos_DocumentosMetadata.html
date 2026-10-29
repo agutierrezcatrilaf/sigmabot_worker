@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campos paramétricos — DocumentosMetadata</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --card: #fff;
+    --ink: #1c2430;
+    --muted: #5c6b7a;
+    --line: #e2e8ee;
+    --accent: #0f6e56;
+    --chip: #eef3f1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  header {
+    background: #12352c;
+    color: #f3faf7;
+    padding: 22px 28px 18px;
+  }
+  header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; }
+  header p { margin: 0; color: #c9ddd6; font-size: 13px; }
+  main { padding: 18px 28px 40px; }
+  .bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  input[type="search"] {
+    flex: 1 1 240px;
+    max-width: 420px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font: inherit;
+    background: var(--card);
+  }
+  .stats { color: var(--muted); font-size: 13px; }
+  .stats b { color: var(--ink); }
+  .cols {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .col {
+    flex: 0 0 460px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    max-height: calc(100vh - 148px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .col .body { overflow: auto; }
+  section.pending-card { margin-top: 16px; }
+  section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  section h2 {
+    margin: 0;
+    padding: 12px 14px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  section h2 span { color: var(--muted); font-weight: 500; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: #fafbfc; }
+  tr:last-child td { border-bottom: 0; }
+  td.n { width: 36px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pending { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; }
+  .pending i {
+    font-style: normal;
+    background: var(--chip);
+    color: #345;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+  }
+  .empty { padding: 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Campos paramétricos de DocumentosMetadata</h1>
+  <p>Aconex_DataLake.dbo.DocumentosMetadata — valores distintos ingresados. Se completa campo por campo.</p>
+</header>
+<main>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Filtrar valores…" autocomplete="off">
+    <div class="stats" id="stats"></div>
+  </div>
+  <div class="cols" id="cols"></div>
+  <section class="pending-card">
+    <h2>Solo mencionados <span>sin volcar el listado</span></h2>
+    <div class="pending" id="mencionados"></div>
+  </section>
+  <section class="pending-card">
+    <h2>Campos pendientes <span>enviar el listado distinto de cada uno</span></h2>
+    <div class="pending" id="pending"></div>
+  </section>
+</main>
+<script type="application/json" id="data">
+{
+  "recibidos": ["CWA", "CWP", "EWP", "CMA", "Discipline"],
+  "pendientes": ["TipoDocumento", "Doctype", "Proceso", "EstatusBim", "Status", "Revision", "CreadoPor"],
+  "mencionados": [{"campo": "FWP", "filas": 1915}],
+  "CWA": [
+    "NDC-97-1",
+    "125.0-06-C",
+    "125.0-06-S-001",
+    "125.0-07",
+    "126.0-01",
+    "126.0-01-",
+    "126.0-11",
+    "NDC-153-3",
+    "NDC-143-1",
+    "NDC-135-7",
+    "NDC-135-4",
+    "126.0-04-W-001",
+    "CWA-1920-700",
+    "N/A",
+    "CWA-1920-000 - Alimentación Línea Eléctrica y Fibr",
+    "125.0-01",
+    "125.0-06-P-002",
+    "CWA-1920-500 - Subestación Principal y Sistema Elé",
+    "125.0-07-L-001",
+    "NDC-153-2",
+    "125.0-07-C",
+    "NDC-108",
+    "125.0-06-C-002-412",
+    "NDC-158-2",
+    "125.0-06",
+    "125.0-06-S-002",
+    "CWA-1920-300 - Obras Exteriores y Misceláneos  / S",
+    "10023811-GO-ELE-PRO-006-R05",
+    "CAW-0000-000 - General",
+    "NDC-165",
+    "CWA-412.0-02",
+    "N2 - NIVEL DE TRANSPORTE",
+    "NDC-135-2",
+    "125.0-04-C",
+    "NULL",
+    "CWA-1920-800",
+    "126.0-08",
+    "ADICIONAL OP32 -OP33",
+    "126.0-09-S",
+    "CWA-1920-600 - Planta de Agua Potable y Red de Agu",
+    "125.0-06-C-002-416",
+    "125.0-04",
+    "125.0-06-R-001-18",
+    "NDC-151",
+    "126.0-09-C",
+    "NDC-041",
+    "NDC-158-3",
+    "125.0-06-L-003",
+    "125.0-12",
+    "150.0-06",
+    "125.0-08",
+    "126.0-02",
+    "125.0-05",
+    "TWP-126.0-01",
+    "-",
+    "CWA-1920-900 - Nave de Lavado",
+    "NDC-143-2",
+    "NDC-120",
+    "NDC-149",
+    "126.0-04",
+    "ADICIONAL",
+    "125.0-07-P-001",
+    "NDC-135-5",
+    "125.0-06-J-002",
+    "125.0-06-P-001",
+    "NDC-153-1",
+    "ADICIONAL OP32 - OP33",
+    "NDC-159",
+    "CWA-1920-400 - Barrio Cívico",
+    "NDC-135-3",
+    "125.0-06-C-002-481",
+    "CWA-1920-700 - Bodegas y Recintos Anexos",
+    "125.0-07-F-001",
+    "NDC-135-6",
+    "125.0-07-R-001-51",
+    "NDC-055",
+    "NDC-97-2",
+    "NDC-123-1",
+    "125.0-05-L-001",
+    "NDC-046",
+    "125.0-07-M",
+    "125.0-12-C",
+    "126.0-05",
+    "CWA-1920-800 - Taller de Camiones",
+    "NDC-110",
+    "126.0-09",
+    "125.0-06-C-002-413",
+    "126.0-06-C",
+    "NDC-155",
+    "125.0-05-J-001",
+    "NDC-135-1",
+    "NDC-033",
+    "125.0-07-R-001",
+    "126-0-09",
+    "NDC-153-4",
+    "NDC-059",
+    "CWA-1920-200 - Planta Tratamiento y Red de Evacuac",
+    "125.0-12-C-00",
+    "126.0-07",
+    "CWA-00",
+    "NDC-049"
+  ],
+  "CWP": [
+    "NDC-97-1",
+    "125.0-05-R-001",
+    "126.0-01-W-002",
+    "CWP-2206-ES-DA-900 - MONTAJE ESTRUCTURA NAVE DE LA",
+    "125.0-05-L-002",
+    "125.0-04-R-002",
+    "125.0-06-C-002",
+    "126.0-09-P-001",
+    "125.0-06-C-002-",
+    "125.0-06-S-001",
+    "125.0-07",
+    "CWP-2204-ES-DA-400 - MONTAJE ESTRUCTURA BARRIO CÍV",
+    "NDC-153-3",
+    "CWP-2216-EL-RE-000 - MALLA PUESTA A TIERRA ALIMENT",
+    "125.0-04-L-001",
+    "125.0-07-L-002",
+    "NDC-143-1",
+    "CWP-2210-ES-CA-600 - HORMIGONES E INSERTOS PLANTA ",
+    "CWP-0000-00-00-000 - General",
+    "126.0-05-L-001",
+    "NDC-135-7",
+    "NDC-135-4",
+    "N7A",
+    "125.0-07-W-001",
+    "126.0-06-C-002",
+    "125.0-06-R-004",
+    "126.0-08-J-001",
+    "CWP-2202-ES-DA-700",
+    "126.0-04-W-001",
+    "150.0-06-C-002",
+    "N/A",
+    "CWP-2210-CA-PA-600 - MONTAJE DE CAÑERIAS PLANTA DE",
+    "125.0-04-J-001",
+    "CWP-2216-ES-CA-000 - HORMIGONES E INSERTOS ALIMENT",
+    "CWP-2208-EL-RE-500 - MALLA PUESTA A TIERRA SUBESTA",
+    "125.0-06-P-002",
+    "CWP-2211-AT-SD-600 - INSTALACIÓN EQUIPOS MISCELANE",
+    "125.0-07-L-001",
+    "NDC-153-2",
+    "125.0-07-M-010",
+    "125.0-06-L-004",
+    "125.0-07-M-005",
+    "C1B1251VCC27",
+    "125.0-06-J-001",
+    "NDC-108",
+    "125.0-06-W-003",
+    "CWP-2205-CI-AC-200 - ZANJAS PLANTA TRATAMIENTO Y R",
+    "125.0-06-C-002-412",
+    "NDC-158-2",
+    "125.0-06",
+    "125.0-12-C-001",
+    "125.0-06-S-002",
+    "126.0-09-S-001",
+    "CWP-2209-ME-GB-500 - ESTANQUES ESTANQUE COMBUSTIBL",
+    "CWP-2216-EL-DA-000 - MONTAJE ESTRUCTURA ALIMENTACI",
+    "125.0-07-M-002",
+    "126.0-01-R-001",
+    "126.0-07-R-001",
+    "125.0-06-M-001",
+    "10023811-GO-ELE-PRO-006-R05",
+    "NDC-165",
+    "CWP-2201-CI-AA-700 - EXCAVACIONES MASIVOS PLATAFOR",
+    "125.0-06-W-004",
+    "125.0-06-P-001, 125.0-06-P-002",
+    "NDC-135-2",
+    "125.0-06-M-001-38",
+    "CWP-2203-ES-CA-700 - HORMIGONES E INSERTOS BODEGA ",
+    "CWP-2208-ES-CA-500 - HORMIGONES E INSERTOS SUBESTA",
+    "NULL",
+    "126.0-02-W-002",
+    "125.0-06-R-001",
+    "126.0-01-L-002",
+    "126.0-09-L-001",
+    "ADICIONAL OP32 -OP33",
+    "125.0-08-P-001",
+    "125.0-06-C-002-416",
+    "125.0-06-R-001-18",
+    "125.0-07-M-006",
+    "126.0-05-R-001",
+    "125.0-05-R-002",
+    "125.0-07-P-001-78",
+    "125.0-04-R-001",
+    "NDC-151",
+    "125.0-07-P-001-68",
+    "NDC-041",
+    "126.0-02-W-001",
+    "NDC-158-3",
+    "125.0-07-M-001",
+    "125.0-06-L-003",
+    "CWP-2216-EL-QB-000 - TRANSFORMADOR ALIMENTACIÓN LÍ",
+    "125.0-12",
+    "126.0-01-W-001",
+    "TWP-126.0-01-W-002",
+    "125.0-06-W-002",
+    "126.0-09-R-001",
+    "125.0-04-L-002",
+    "126.0-02-R-001",
+    "125.0-05",
+    "125.0-06-C-001",
+    "126.0-04-R-001",
+    "CWP-2204-ES-CA-400 - HORMIGONES E INSERTOS BARRIO ",
+    "-",
+    "126.0-07-W-002",
+    "NDC-143-2",
+    "NDC-120",
+    "NDC-149",
+    "125.0-07-P-001-88",
+    "126.0-01-L-001",
+    "ADICIONAL",
+    "125.0-07-F-002",
+    "CWP-2202-ES-DA-800 - MONTAJE ESTRUCTURA TALLER DE ",
+    "125.0-05-W-001",
+    "CWP-2204-CI-AB-400 - RELLENO ESTRUCTURAL BARRIO CÍ",
+    "126.0-09-M-001",
+    "125.0-07-P-001",
+    "NDC-135-5",
+    "125.0-06-J-002",
+    "126.0-04-R-002",
+    "125.0-06-C-002-414",
+    "125.0-06-P-001",
+    "CWP-2213-AR-BA-300 - CAMINOS OBRAS EXTERIORES Y MI",
+    "125.0-06-P-001-",
+    "125.0-08-C-001",
+    "125.0-06-P-00",
+    "126.0-08-R-002",
+    "126.0-05-R-002",
+    "125.0-07-M-007",
+    "126.0-09-R-002",
+    "NDC-153-1",
+    "CWP-2202-ES-DA-800",
+    "CWP-2210-ME-KA-600 - PLANTA POTABILIZACIÓN PLANTA ",
+    "ADICIONAL OP32 - OP33",
+    "NDC-159",
+    "CWP-2208-EL-QJ-500 - MONTAJE EQUIPO ALUMBRADO SUBE",
+    "125.0-07-P-001-94",
+    "NDC-135-3",
+    "125.0-06-C-002-481",
+    "CWP-2202-ES-CA-800 - HORMIGONES E INSERTOS TALLER ",
+    "125.0-07-F-001",
+    "NDC-135-6",
+    "126.0-08-P-001",
+    "125.0-07-R-001-51",
+    "126.0-04-P-001",
+    "CWP-2207-ES-CA-900 - HORMIGONES E INSERTOS SISTEMA",
+    "NDC-055",
+    "25.0-07-P-001",
+    "125.0-07-C-001",
+    "125.0-07-R-002",
+    "125.0-04-P-001",
+    "125.0-04-W-001",
+    "CWP-2203-ES-DA-700 - MONTAJE ESTRUCTURA BODEGAS Y ",
+    "NDC-97-2",
+    "NDC-123-1",
+    "NDC-046",
+    "125.0-05-L-001",
+    "CWP-2213-ES-DA-300 - MONTAJE ESTRUCTURA OBRAS EXTE",
+    "C1A1232VCC08",
+    "125.0-06-M-002",
+    "126.0-11-C-001",
+    "CWP-2210-CA-PE-600 - MONTAJE DE VALVULAS PLANTA DE",
+    "NDC-110",
+    "125.0-06-C-002-413",
+    "125.0-06-R-003",
+    "126.0-09-C-001",
+    "126.0-09-W-002",
+    "125.0-04-C-001",
+    "125.0-07-J-001",
+    "NDC-155",
+    "125.0-05-J-001",
+    "CWP-2205-ES-CA-200 - HORMIGONES E INSERTOS PLANTA ",
+    "125.0-07-P-001-89",
+    "126.0-08-L-002",
+    "125.0-07-P-001-131",
+    "125.0-06-W-001",
+    "NDC-135-1",
+    "CWP-2208-EL-CA-500 - HORMIGONES E INSERTOS SUBESTA",
+    "NDC-033",
+    "125.0-07-R-001",
+    "126.0-02-L-002",
+    "126.0-05-W-002",
+    "125.0-07-W-002",
+    "125.0-06-R-002",
+    "126.0-05-W-001",
+    "125.0-05-P-001",
+    "126.0-08-R-001",
+    "126.0-04-W-002",
+    "125.0-01-R-002",
+    "126.0-09-J-001",
+    "126.0-01-R-002",
+    "NDC-153-4",
+    "126.0-08-W-001",
+    "C2F1411VCC15",
+    "CWP - 126.0-07-R-001 - NT - FOOTPRINT SECTOR SEE-0",
+    "NDC-059",
+    "CWP-2213-ES-CA-300 - HORMIGONES E INSERTOS OBRAS E",
+    "CWP00",
+    "125.0-06-L-001",
+    "125.0-01-J-001",
+    "CWP-2201-CI-AA-300 - EXCAVACIONES MASIVOS PLATAFOR",
+    "126.0-08-W-002",
+    "NDC-049"
+  ],
+  "EWP": [
+    "NDC-97-1",
+    "125.0-05-R-001",
+    "126.0-01-W-002",
+    "CWP-2206-ES-DA-900 - MONTAJE ESTRUCTURA NAVE DE LA",
+    "125.0-05-L-002",
+    "125.0-04-R-002",
+    "125.0-06-C-002",
+    "126.0-09-P-001",
+    "125.0-06-C-002-",
+    "125.0-06-S-001",
+    "125.0-07",
+    "CWP-2204-ES-DA-400 - MONTAJE ESTRUCTURA BARRIO CÍV",
+    "NDC-153-3",
+    "CWP-2216-EL-RE-000 - MALLA PUESTA A TIERRA ALIMENT",
+    "125.0-04-L-001",
+    "125.0-07-L-002",
+    "NDC-143-1",
+    "CWP-2210-ES-CA-600 - HORMIGONES E INSERTOS PLANTA ",
+    "CWP-0000-00-00-000 - General",
+    "126.0-05-L-001",
+    "NDC-135-7",
+    "NDC-135-4",
+    "N7A",
+    "125.0-07-W-001",
+    "126.0-06-C-002",
+    "125.0-06-R-004",
+    "126.0-08-J-001",
+    "CWP-2202-ES-DA-700",
+    "126.0-04-W-001",
+    "150.0-06-C-002",
+    "N/A",
+    "CWP-2210-CA-PA-600 - MONTAJE DE CAÑERIAS PLANTA DE",
+    "125.0-04-J-001",
+    "CWP-2216-ES-CA-000 - HORMIGONES E INSERTOS ALIMENT",
+    "CWP-2208-EL-RE-500 - MALLA PUESTA A TIERRA SUBESTA",
+    "125.0-06-P-002",
+    "CWP-2211-AT-SD-600 - INSTALACIÓN EQUIPOS MISCELANE",
+    "125.0-07-L-001",
+    "NDC-153-2",
+    "125.0-07-M-010",
+    "125.0-06-L-004",
+    "125.0-07-M-005",
+    "C1B1251VCC27",
+    "125.0-06-J-001",
+    "NDC-108",
+    "125.0-06-W-003",
+    "CWP-2205-CI-AC-200 - ZANJAS PLANTA TRATAMIENTO Y R",
+    "125.0-06-C-002-412",
+    "NDC-158-2",
+    "125.0-06",
+    "125.0-12-C-001",
+    "125.0-06-S-002",
+    "126.0-09-S-001",
+    "CWP-2209-ME-GB-500 - ESTANQUES ESTANQUE COMBUSTIBL",
+    "CWP-2216-EL-DA-000 - MONTAJE ESTRUCTURA ALIMENTACI",
+    "125.0-07-M-002",
+    "126.0-01-R-001",
+    "126.0-07-R-001",
+    "125.0-06-M-001",
+    "10023811-GO-ELE-PRO-006-R05",
+    "NDC-165",
+    "CWP-2201-CI-AA-700 - EXCAVACIONES MASIVOS PLATAFOR",
+    "125.0-06-W-004",
+    "125.0-06-P-001, 125.0-06-P-002",
+    "NDC-135-2",
+    "125.0-06-M-001-38",
+    "CWP-2203-ES-CA-700 - HORMIGONES E INSERTOS BODEGA ",
+    "CWP-2208-ES-CA-500 - HORMIGONES E INSERTOS SUBESTA",
+    "NULL",
+    "126.0-02-W-002",
+    "125.0-06-R-001",
+    "126.0-01-L-002",
+    "126.0-09-L-001",
+    "ADICIONAL OP32 -OP33",
+    "125.0-08-P-001",
+    "125.0-06-C-002-416",
+    "125.0-06-R-001-18",
+    "125.0-07-M-006",
+    "126.0-05-R-001",
+    "125.0-05-R-002",
+    "125.0-07-P-001-78",
+    "125.0-04-R-001",
+    "NDC-151",
+    "125.0-07-P-001-68",
+    "NDC-041",
+    "126.0-02-W-001",
+    "NDC-158-3",
+    "125.0-07-M-001",
+    "125.0-06-L-003",
+    "CWP-2216-EL-QB-000 - TRANSFORMADOR ALIMENTACIÓN LÍ",
+    "125.0-12",
+    "126.0-01-W-001",
+    "TWP-126.0-01-W-002",
+    "125.0-06-W-002",
+    "126.0-09-R-001",
+    "125.0-04-L-002",
+    "126.0-02-R-001",
+    "125.0-05",
+    "125.0-06-C-001",
+    "126.0-04-R-001",
+    "CWP-2204-ES-CA-400 - HORMIGONES E INSERTOS BARRIO ",
+    "-",
+    "126.0-07-W-002",
+    "NDC-143-2",
+    "NDC-120",
+    "NDC-149",
+    "125.0-07-P-001-88",
+    "126.0-01-L-001",
+    "ADICIONAL",
+    "125.0-07-F-002",
+    "CWP-2202-ES-DA-800 - MONTAJE ESTRUCTURA TALLER DE ",
+    "125.0-05-W-001",
+    "CWP-2204-CI-AB-400 - RELLENO ESTRUCTURAL BARRIO CÍ",
+    "126.0-09-M-001",
+    "125.0-07-P-001",
+    "NDC-135-5",
+    "125.0-06-J-002",
+    "126.0-04-R-002",
+    "125.0-06-C-002-414",
+    "125.0-06-P-001",
+    "CWP-2213-AR-BA-300 - CAMINOS OBRAS EXTERIORES Y MI",
+    "125.0-06-P-001-",
+    "125.0-08-C-001",
+    "125.0-06-P-00",
+    "126.0-08-R-002",
+    "126.0-05-R-002",
+    "125.0-07-M-007",
+    "126.0-09-R-002",
+    "NDC-153-1",
+    "CWP-2202-ES-DA-800",
+    "CWP-2210-ME-KA-600 - PLANTA POTABILIZACIÓN PLANTA ",
+    "ADICIONAL OP32 - OP33",
+    "NDC-159",
+    "CWP-2208-EL-QJ-500 - MONTAJE EQUIPO ALUMBRADO SUBE",
+    "125.0-07-P-001-94",
+    "NDC-135-3",
+    "125.0-06-C-002-481",
+    "CWP-2202-ES-CA-800 - HORMIGONES E INSERTOS TALLER ",
+    "125.0-07-F-001",
+    "NDC-135-6",
+    "126.0-08-P-001",
+    "125.0-07-R-001-51",
+    "126.0-04-P-001",
+    "CWP-2207-ES-CA-900 - HORMIGONES E INSERTOS SISTEMA",
+    "NDC-055",
+    "25.0-07-P-001",
+    "125.0-07-C-001",
+    "125.0-07-R-002",
+    "125.0-04-P-001",
+    "125.0-04-W-001",
+    "CWP-2203-ES-DA-700 - MONTAJE ESTRUCTURA BODEGAS Y ",
+    "NDC-97-2",
+    "NDC-123-1",
+    "NDC-046",
+    "125.0-05-L-001",
+    "CWP-2213-ES-DA-300 - MONTAJE ESTRUCTURA OBRAS EXTE",
+    "C1A1232VCC08",
+    "125.0-06-M-002",
+    "126.0-11-C-001",
+    "CWP-2210-CA-PE-600 - MONTAJE DE VALVULAS PLANTA DE",
+    "NDC-110",
+    "125.0-06-C-002-413",
+    "125.0-06-R-003",
+    "126.0-09-C-001",
+    "126.0-09-W-002",
+    "125.0-04-C-001",
+    "125.0-07-J-001",
+    "NDC-155",
+    "125.0-05-J-001",
+    "CWP-2205-ES-CA-200 - HORMIGONES E INSERTOS PLANTA ",
+    "125.0-07-P-001-89",
+    "126.0-08-L-002",
+    "125.0-07-P-001-131",
+    "125.0-06-W-001",
+    "NDC-135-1",
+    "CWP-2208-EL-CA-500 - HORMIGONES E INSERTOS SUBESTA",
+    "NDC-033",
+    "125.0-07-R-001",
+    "126.0-02-L-002",
+    "126.0-05-W-002",
+    "125.0-07-W-002",
+    "125.0-06-R-002",
+    "126.0-05-W-001",
+    "125.0-05-P-001",
+    "126.0-08-R-001",
+    "126.0-04-W-002",
+    "125.0-01-R-002",
+    "126.0-09-J-001",
+    "126.0-01-R-002",
+    "NDC-153-4",
+    "126.0-08-W-001",
+    "C2F1411VCC15",
+    "CWP - 126.0-07-R-001 - NT - FOOTPRINT SECTOR SEE-0",
+    "NDC-059",
+    "CWP-2213-ES-CA-300 - HORMIGONES E INSERTOS OBRAS E",
+    "125.0-06-L-001",
+    "125.0-01-J-001",
+    "CWP-2201-CI-AA-300 - EXCAVACIONES MASIVOS PLATAFOR",
+    "126.0-08-W-002",
+    "NDC-049"
+  ],
+  "CMA": [
+    "CMA-00 / General",
+    "NULL",
+    "CMA-01"
+  ],
+  "Discipline": [
+    "AUTOMATIZACIÓN",
+    "ESTRUCTURA",
+    "PREFABRICADOS",
+    "OOCC",
+    "MOVIMIENTO DE TIERRA",
+    "Sin disciplina",
+    "SSOMA",
+    "ARQUITECTURA",
+    "E&I",
+    "GENERAL",
+    "TOPOGRAFÍA",
+    "MECÁNICA",
+    "PINTURA",
+    "PIPING",
+    "INSTALACIONES",
+    "SOLDADURA",
+    "OBRA GRUESA"
+  ]
+}
+</script>
+<script>
+const data = JSON.parse(document.getElementById("data").textContent);
+const campos = data.recibidos;
+const q = document.getElementById("q");
+
+function render() {
+  const term = q.value.trim().toLocaleLowerCase("es");
+  let visibles = 0;
+  let total = 0;
+
+  document.getElementById("cols").innerHTML = campos.map(campo => {
+    const lista = data[campo];
+    total += lista.length;
+    const rows = lista
+      .filter(v => !term || v.toLocaleLowerCase("es").includes(term))
+      .slice()
+      .sort((a, b) => a.localeCompare(b, "es", { numeric: true, sensitivity: "base" }));
+    visibles += rows.length;
+    const body = rows.map((v, n) =>
+      `<tr><td class="n">${n + 1}</td><td>${escapeHtml(v)}</td></tr>`
+    ).join("") || `<tr><td colspan="2" class="empty">Sin coincidencias.</td></tr>`;
+    const count = term ? `${rows.length} de ${lista.length}` : `${lista.length} distintos`;
+    return `<section class="col"><h2>${campo} <span>${count}</span></h2><div class="body"><table><thead><tr><th>#</th><th>Valor</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+  }).join("");
+
+  document.getElementById("stats").innerHTML =
+    `Recibidos: <b>${campos.join(", ")}</b> · ${total} valores · mostrando <b>${visibles}</b>`;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+
+document.getElementById("mencionados").innerHTML = (data.mencionados || []).map(m => `<i>${m.campo} · ${m.filas} filas</i>`).join("");
+document.getElementById("pending").innerHTML = data.pendientes.map(p => `<i>${p}</i>`).join("");
+q.addEventListener("input", render);
+render();
+</script>
+</body>
+</html>
