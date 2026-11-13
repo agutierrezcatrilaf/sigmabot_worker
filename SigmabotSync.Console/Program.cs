@@ -896,6 +896,7 @@ namespace SigmabotSync.Console
             SigmabotSync.Application.Common.Utilities.Wlog(
                 "Configuración FileUploadWithMetadata (IdTrabajo=" + trabajoConfig.IdTrabajo + "): Proyecto=" + projectName
                 + ", IdProyecto=" + projectId + ", TablaMetadata=" + tablaMetadata + ", TablaPaths=" + tablaPaths
+                + ", TablaHomologacion=" + FileUploadWithMetadataDefaults.ResolverTablaHomologacion(trabajoConfig.TablaHomologacion)
                 + ", Credencial Aconex=" + credAconex.Nombre + " (" + credAconex.Aconex_Instancia + ")"
                 + ", Credencial BD=" + credBd.Nombre + " → " + credBd.BD_Servidor + "/" + credBd.BD_BaseDatos, 1);
             SigmabotSync.Application.Common.Utilities.Wlog("", 0);
@@ -985,12 +986,15 @@ namespace SigmabotSync.Console
             {
                 string tablaMetadata = FileUploadWithMetadataDefaults.ResolverTablaMetadata(trabajoConfig.TablaMetadata);
                 string tablaPaths = FileUploadWithMetadataDefaults.ResolverTablaPaths(trabajoConfig.TablaPaths);
+                string tablaHomologacion = FileUploadWithMetadataDefaults.ResolverTablaHomologacion(trabajoConfig.TablaHomologacion);
                 if (!string.Equals(tablaMetadata, FileUploadWithMetadataDefaults.TablaMetadata, StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(tablaPaths, FileUploadWithMetadataDefaults.TablaPaths, StringComparison.OrdinalIgnoreCase))
+                    || !string.Equals(tablaPaths, FileUploadWithMetadataDefaults.TablaPaths, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(tablaHomologacion, FileUploadWithMetadataDefaults.TablaHomologacion, StringComparison.OrdinalIgnoreCase))
                 {
                     SigmabotSync.Application.Common.Utilities.Wlog(
                         "ERROR: FileUploadWithMetadata requiere TablaMetadata=" + FileUploadWithMetadataDefaults.TablaMetadata
-                        + " y TablaPaths=" + FileUploadWithMetadataDefaults.TablaPaths + ".", 0);
+                        + ", TablaPaths=" + FileUploadWithMetadataDefaults.TablaPaths
+                        + " y TablaHomologacion=" + FileUploadWithMetadataDefaults.TablaHomologacion + ".", 0);
                     return null;
                 }
             }

@@ -54,6 +54,9 @@ namespace SigmabotSync.Domain.Entities
         /// <summary>Tabla de rutas físicas enlazada por <c>DocumentoId</c> (desde TrabajosConfiguracion Nombre=TablaPaths). Ej. <c>DocumentosPath</c>.</summary>
         public string TablaPaths { get; set; }
 
+        /// <summary>Tabla de homologación en la credencial BD (desde TrabajosConfiguracion Nombre=TablaHomologacion). Ej. <c>DocumentosHomologacion</c>.</summary>
+        public string TablaHomologacion { get; set; }
+
         /// <summary>Id de la credencial Aconex en tabla Credenciales (desde TrabajosConfiguracion Nombre=CredencialAconex).</summary>
         public int? CredencialAconexId { get; set; }
 

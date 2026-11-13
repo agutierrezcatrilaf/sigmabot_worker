@@ -7,6 +7,7 @@ namespace SigmabotSync.Domain.Configuration
     {
         public const string TablaMetadata = "DocumentosMetadata";
         public const string TablaPaths = "DocumentosPath";
+        public const string TablaHomologacion = "DocumentosHomologacion";
 
         public static string ResolverTablaMetadata(string configurado)
         {
@@ -16,6 +17,11 @@ namespace SigmabotSync.Domain.Configuration
         public static string ResolverTablaPaths(string configurado)
         {
             return string.IsNullOrWhiteSpace(configurado) ? TablaPaths : configurado.Trim();
+        }
+
+        public static string ResolverTablaHomologacion(string configurado)
+        {
+            return string.IsNullOrWhiteSpace(configurado) ? TablaHomologacion : configurado.Trim();
         }
     }
 }

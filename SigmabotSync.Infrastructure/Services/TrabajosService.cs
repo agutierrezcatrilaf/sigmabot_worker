@@ -129,6 +129,9 @@ namespace SigmabotSync.Infrastructure.Services
                                 case "TablaPaths":
                                     result.TablaPaths = valor;
                                     break;
+                                case "TablaHomologacion":
+                                    result.TablaHomologacion = valor;
+                                    break;
                                 case "CredencialAconex":
                                     if (int.TryParse(valor, out int idAconex))
                                         result.CredencialAconexId = idAconex;

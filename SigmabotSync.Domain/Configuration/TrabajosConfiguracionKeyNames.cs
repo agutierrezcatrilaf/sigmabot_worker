@@ -23,6 +23,7 @@ namespace SigmabotSync.Domain.Configuration
         public const string BasePath = "BasePath";
         public const string TablaMetadata = "TablaMetadata";
         public const string TablaPaths = "TablaPaths";
+        public const string TablaHomologacion = "TablaHomologacion";
         /// <summary>idEstatus fijo al registrar en el proyecto destino (lado 1). Acepta id o nombre en EstatusDocumentos.</summary>
         public const string IdEstatusDocumentoDestino = "IdEstatusDocumentoDestino";
         /// <summary>En vuelta (SALFA→Codelco), solo procesar transmitals cuyo Subject contenga este texto (ej. Final).</summary>

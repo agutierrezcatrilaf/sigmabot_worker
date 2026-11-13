@@ -122,6 +122,13 @@ namespace SigmabotSync.Domain.Configuration
                 tiposDondeVisible: new[] { TipoTrabajoIds.FileUploadWithMetadata },
                 tiposDondeObligatorio: new[] { TipoTrabajoIds.FileUploadWithMetadata },
                 ayuda: "Tabla con PathFisico enlazada por DocumentoId. Estándar: " + FileUploadWithMetadataDefaults.TablaPaths + "."),
+
+            new TrabajoConfiguracionCampoDefinicion(
+                TrabajosConfiguracionKeyNames.TablaHomologacion,
+                "Tabla homologación (BD)",
+                tiposDondeVisible: new[] { TipoTrabajoIds.FileUploadWithMetadata },
+                tiposDondeObligatorio: new[] { TipoTrabajoIds.FileUploadWithMetadata },
+                ayuda: "Tabla de equivalencias en la credencial BD. Estándar: " + FileUploadWithMetadataDefaults.TablaHomologacion + "."),
         };
 
         public static IReadOnlyList<TrabajoConfiguracionCampoDefinicion> ObtenerTodos()

@@ -18,6 +18,8 @@ BEGIN
         [CWA] [nvarchar](50) NULL,
         [CWP] [nvarchar](50) NULL,
         [EWP] [nvarchar](50) NULL,
+        [FWP] [nvarchar](50) NULL,
+        [IWP] [nvarchar](50) NULL,
         [PWP] [nvarchar](50) NULL,
         [CMA] [nvarchar](50) NULL,
         [Discipline] [nvarchar](50) NULL,
@@ -30,6 +32,11 @@ BEGIN
 END
 ELSE
     PRINT 'La tabla DocumentosMetadata ya existe.';
+
+IF COL_LENGTH('dbo.DocumentosMetadata', 'FWP') IS NULL
+    ALTER TABLE dbo.DocumentosMetadata ADD [FWP] NVARCHAR(50) NULL;
+IF COL_LENGTH('dbo.DocumentosMetadata', 'IWP') IS NULL
+    ALTER TABLE dbo.DocumentosMetadata ADD [IWP] NVARCHAR(50) NULL;
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'DocumentosPath')
 BEGIN

@@ -68,6 +68,8 @@ namespace SigmabotSync.Application.FileExtraction
         private readonly Credencial _credBd;
         private readonly FileExtractionConfig _aconexConfig;
         private readonly IAconexRegisterWritePort _registerWritePort;
+        private Dictionary<string, List<string>> _disciplinePorOrigen =
+            new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         public event Action<int, int> OnProgress;
         public event Action<string, int> OnStatus;
@@ -88,21 +90,14 @@ namespace SigmabotSync.Application.FileExtraction
             _aconexConfig = FileExtractionConfig.FromCredencial(credAconex, trabajoConfig.IdProyecto ?? "", null);
         }
 
-        /// <summary>Alias temporales de columnas DataLake (ej. FWP en BD → PWP en Aconex). Quitar al alinear nombres en BD.</summary>
-        private static readonly IReadOnlyDictionary<string, string[]> DataLakeColumnAliases =
-            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["PWP"] = new[] { "FWP" },
-            };
+        /// <summary>Texto de FWP en Aconex. El valor sale de <c>FWP</c> y, si viene vacío, de <c>IWP</c>.</summary>
+        private const string XmlNameFwpSingleLineText = "Fwp_singleLineText";
 
-        /// <summary>Columnas de proyecto DataLake → elemento XML <c>*_singleSelect</c> en Register Document.</summary>
+        /// <summary>Columnas de proyecto DataLake → elemento XML <c>*_singleSelect</c> en Register Document. CMA, EWP y PWP no se envían.</summary>
         private static readonly (string ColumnaMetadata, string XmlSingleSelect)[] DataLakeProjectFieldMap =
         {
             ("CWA", "Cwa_singleSelect"),
             ("CWP", "Cwp_singleSelect"),
-            ("EWP", "Ewp_singleSelect"),
-            ("PWP", "Pwp_singleSelect"),
-            ("CMA", "Cma_singleSelect"),
             ("Discipline", "Discipline_singleSelect"),
             ("TipoDocumento", "TipoDeDocumento_singleSelect"),
             ("Proceso", "Proceso_singleSelect"),
@@ -127,6 +122,7 @@ namespace SigmabotSync.Application.FileExtraction
 
             string tablaMetadata = FileUploadWithMetadataDefaults.ResolverTablaMetadata(_trabajoConfig.TablaMetadata);
             string tablaPaths = FileUploadWithMetadataDefaults.ResolverTablaPaths(_trabajoConfig.TablaPaths);
+            string tablaHomologacion = FileUploadWithMetadataDefaults.ResolverTablaHomologacion(_trabajoConfig.TablaHomologacion);
 
             if (!string.Equals(tablaMetadata, FileUploadWithMetadataDefaults.TablaMetadata, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(tablaPaths, FileUploadWithMetadataDefaults.TablaPaths, StringComparison.OrdinalIgnoreCase))
@@ -138,8 +134,17 @@ namespace SigmabotSync.Application.FileExtraction
                     + FileUploadWithMetadataDefaults.TablaPaths + ".");
             }
 
+            if (!string.Equals(tablaHomologacion, FileUploadWithMetadataDefaults.TablaHomologacion, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "FileUploadWithMetadata solo admite TablaHomologacion="
+                    + FileUploadWithMetadataDefaults.TablaHomologacion + ".");
+            }
+
             Action<string, int> log = (msg, nivel) => OnStatus?.Invoke(msg, nivel);
 
+            _disciplinePorOrigen = CargarHomologacionDiscipline(connectionStringBd, tablaHomologacion, log);
+            SyncLog.Info(log, "Homologación de Discipline: " + _disciplinePorOrigen.Sum(par => par.Value.Count) + " valores.");
             SyncLog.Info(log, "Leyendo los documentos para enviar.");
             SyncLog.Debug(log, $"Leyendo {tablaMetadata} + {tablaPaths}...");
             DataTable metadata = LeerMetadataConPaths(connectionStringBd, tablaMetadata, tablaPaths);
@@ -1012,7 +1017,57 @@ namespace SigmabotSync.Application.FileExtraction
         /// Emite <c>*_singleSelect</c> solo con datos presentes en la fila (sin defaults), excepto
         /// <see cref="XmlNameTipoDeDocumentoSingleSelect"/> que siempre se envía (default <see cref="DefaultTipoDeDocumentoSingleSelectValue"/>).
         /// </summary>
-        private static void AppendProjectSingleSelectFieldsFromRow(
+        private static Dictionary<string, List<string>> CargarHomologacionDiscipline(
+            string connectionStringBd,
+            string tabla,
+            Action<string, int> log)
+        {
+            var mapa = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            if (!System.Text.RegularExpressions.Regex.IsMatch(tabla ?? "", @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                throw new InvalidOperationException("El nombre de la tabla de homologación no es válido.");
+
+            string sql = "SELECT ValorOrigen, ValorDestino FROM dbo." + tabla
+                + " WHERE Campo = N'Discipline' AND Activo = 1";
+            using (var cn = new SqlConnection(connectionStringBd))
+            using (var cmd = new SqlCommand(sql, cn))
+            {
+                cn.Open();
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string origen = reader[0] == DBNull.Value ? null : reader[0].ToString()?.Trim();
+                        string destino = reader[1] == DBNull.Value ? null : reader[1].ToString()?.Trim();
+                        if (string.IsNullOrWhiteSpace(origen) || string.IsNullOrWhiteSpace(destino))
+                            continue;
+                        if (!mapa.TryGetValue(origen, out List<string> destinos))
+                        {
+                            destinos = new List<string>();
+                            mapa[origen] = destinos;
+                        }
+                        if (!destinos.Exists(item => string.Equals(item, destino, StringComparison.OrdinalIgnoreCase)))
+                            destinos.Add(destino);
+                    }
+                }
+            }
+
+            SyncLog.Debug(log, "Homologación leída de " + tabla + ".");
+            return mapa;
+        }
+
+        private static string TraducirDiscipline(string valor, IReadOnlyDictionary<string, List<string>> mapa)
+        {
+            if (string.IsNullOrWhiteSpace(valor))
+                return valor;
+            string clave = valor.Trim();
+            if (mapa == null || !mapa.TryGetValue(clave, out List<string> destinos) || destinos == null || destinos.Count == 0)
+                throw new InvalidOperationException("la disciplina '" + clave + "' no tiene homologación");
+            if (destinos.Count > 1)
+                throw new InvalidOperationException("la disciplina '" + clave + "' tiene más de una homologación");
+            return destinos[0].Trim();
+        }
+
+        private void AppendProjectSingleSelectFieldsFromRow(
             StringBuilder sb,
             DataRow row,
             DataColumnCollection columnas,
@@ -1026,6 +1081,8 @@ namespace SigmabotSync.Application.FileExtraction
                     continue;
 
                 string value = ResolveProjectSingleSelectValue(row, columnas, xmlSingleSelect);
+                if (string.Equals(xmlSingleSelect, "Discipline_singleSelect", StringComparison.OrdinalIgnoreCase))
+                    value = TraducirDiscipline(value, _disciplinePorOrigen);
                 if (string.IsNullOrWhiteSpace(value)
                     && string.Equals(xmlSingleSelect, XmlNameEstatusBimSingleSelect, StringComparison.OrdinalIgnoreCase))
                     value = DefaultEstatusBimWhenEmpty;
@@ -1063,6 +1120,8 @@ namespace SigmabotSync.Application.FileExtraction
             foreach ((string xmlSingleSelect, string valor) in TemporaryMissingProjectFields)
                 AppendFixedProjectSingleSelect(sb, row, columnas, xmlSingleSelect, valor);
 
+            AppendFwpSingleLineText(sb, row, columnas);
+
             ValidateMandatoryProjectSingleSelectFields(row, columnas, registerSchema);
         }
 
@@ -1073,6 +1132,17 @@ namespace SigmabotSync.Application.FileExtraction
                 || string.Equals(value.Trim(), "Certificado", StringComparison.OrdinalIgnoreCase))
                 return DefaultTipoDeDocumentoSingleSelectValue;
             return value.Trim();
+        }
+
+        private static void AppendFwpSingleLineText(StringBuilder sb, DataRow row, DataColumnCollection columnas)
+        {
+            string value = GetValueFromRow(row, columnas, "FWP", "IWP");
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            sb.Append("<").Append(XmlNameFwpSingleLineText).Append(">")
+                .Append(EscapeXml(value.Trim()))
+                .Append("</").Append(XmlNameFwpSingleLineText).Append(">");
         }
 
         private static void AppendFixedProjectSingleSelect(
@@ -1093,7 +1163,7 @@ namespace SigmabotSync.Application.FileExtraction
                 .Append("</").Append(xmlSingleSelect).Append(">");
         }
 
-        /// <summary>Obtiene el valor DataLake para un campo de proyecto <c>*_singleSelect</c> (p. ej. columna <c>PWP</c> → <c>Pwp_singleSelect</c>).</summary>
+        /// <summary>Obtiene el valor DataLake para un campo de proyecto <c>*_singleSelect</c> (p. ej. columna <c>CWA</c> → <c>Cwa_singleSelect</c>).</summary>
         private static string ResolveProjectSingleSelectValue(
             DataRow row,
             DataColumnCollection columnas,
@@ -1106,15 +1176,6 @@ namespace SigmabotSync.Application.FileExtraction
             {
                 string fromMapped = GetValueFromRow(row, columnas, dataLakeColumn);
                 if (!string.IsNullOrWhiteSpace(fromMapped)) return fromMapped.Trim();
-
-                if (DataLakeColumnAliases.TryGetValue(dataLakeColumn, out string[] aliases))
-                {
-                    foreach (string alias in aliases)
-                    {
-                        string fromAlias = GetValueFromRow(row, columnas, alias);
-                        if (!string.IsNullOrWhiteSpace(fromAlias)) return fromAlias.Trim();
-                    }
-                }
             }
 
             return GetValueFromRow(row, columnas, xmlSingleSelect);
@@ -1168,6 +1229,9 @@ namespace SigmabotSync.Application.FileExtraction
                 if (string.Equals(id, XmlNameTipoDeDocumentoSingleSelect, StringComparison.OrdinalIgnoreCase)) continue;
                 if (string.Equals(id, XmlNameOrigenSingleSelect, StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsEstadoRedLineField(id)) continue;
+                if (string.Equals(id, "Pwp_singleSelect", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(id, "Cma_singleSelect", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(id, "Ewp_singleSelect", StringComparison.OrdinalIgnoreCase)) continue;
 
                 string value = ResolveProjectSingleSelectValue(row, columnas, id);
                 if (!string.IsNullOrWhiteSpace(value)) continue;

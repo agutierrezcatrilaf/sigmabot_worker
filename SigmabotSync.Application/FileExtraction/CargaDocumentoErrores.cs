@@ -310,6 +310,10 @@ namespace SigmabotSync.Application.FileExtraction
                 return new ErrorCargaDocumento(archivo, CategoriaErrorCarga.DatosRechazados, "el estado no es válido para este proyecto");
             if (Contiene(mensaje, "no es un DocumentTypeId"))
                 return new ErrorCargaDocumento(archivo, CategoriaErrorCarga.DatosRechazados, "el tipo de documento no es válido para este proyecto");
+            if (Contiene(mensaje, "tiene más de una homologación"))
+                return new ErrorCargaDocumento(archivo, CategoriaErrorCarga.DatosRechazados, "la disciplina " + ExtraerEntreComillas(mensaje) + " tiene más de una homologación");
+            if (Contiene(mensaje, "no tiene homologación"))
+                return new ErrorCargaDocumento(archivo, CategoriaErrorCarga.DatosRechazados, "la disciplina " + ExtraerEntreComillas(mensaje) + " no tiene homologación");
 
             return null;
         }

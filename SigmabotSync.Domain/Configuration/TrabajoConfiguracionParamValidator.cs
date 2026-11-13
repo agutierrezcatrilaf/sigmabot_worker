@@ -38,6 +38,10 @@ namespace SigmabotSync.Domain.Configuration
                     errores.Add("Tabla metadata debe ser " + FileUploadWithMetadataDefaults.TablaMetadata + ".");
                 if (!string.Equals(pathsR, FileUploadWithMetadataDefaults.TablaPaths, StringComparison.OrdinalIgnoreCase))
                     errores.Add("Tabla rutas debe ser " + FileUploadWithMetadataDefaults.TablaPaths + ".");
+                valorPorNombre.TryGetValue(TrabajosConfiguracionKeyNames.TablaHomologacion, out var homolog);
+                string homologR = FileUploadWithMetadataDefaults.ResolverTablaHomologacion(homolog);
+                if (!string.Equals(homologR, FileUploadWithMetadataDefaults.TablaHomologacion, StringComparison.OrdinalIgnoreCase))
+                    errores.Add("Tabla homologación debe ser " + FileUploadWithMetadataDefaults.TablaHomologacion + ".");
             }
 
             if (MapeoCamposDocumentoHelper.TipoUsaMapeoGuiado(tipoTrabajo ?? string.Empty))
