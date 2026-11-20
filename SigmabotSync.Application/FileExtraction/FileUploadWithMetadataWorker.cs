@@ -205,7 +205,9 @@ namespace SigmabotSync.Application.FileExtraction
                     : Path.GetFileName(ObtenerReferenciaArchivoFila(row, metadata.Columns, columnaRutaArchivo) ?? "") ?? "?";
                 if (string.IsNullOrWhiteSpace(archivo))
                     archivo = "?";
+                string titulo = GetValueFromRow(row, metadata.Columns, "Titulo", "title", "Title");
                 string etiqueta = CargaDocumentoErrores.Etiqueta(
+                    titulo,
                     GetValueFromRow(row, metadata.Columns, "NumeroDocumento", "docno", "DocumentNumber"),
                     metaId,
                     archivo);
@@ -230,16 +232,20 @@ namespace SigmabotSync.Application.FileExtraction
 
                 try
                 {
-                    string documentId = await EnviarDocumentoAconexAsync(
+                    (string documentId, string documentNumber) = await EnviarDocumentoAconexAsync(
                         filePath, row, metadata.Columns, registerSchema, mapTipos, mapEstatus, log);
                     enviados++;
                     AcumularFilaProcesadaParaUpdate(row, columnaId, idsProcesadosExitosamente);
-                    SyncLog.Debug(log, $"OK Id={metaId} archivo={archivo} → DocumentId={documentId ?? "?"}");
+                    SyncLog.Debug(log, $"OK Id={metaId} archivo={archivo} → DocumentId={documentId ?? "?"} Número={documentNumber ?? "?"}");
+                    SyncLog.Info(log, "Documento creado. " + (string.IsNullOrWhiteSpace(titulo) ? archivo : titulo.Trim()) + ".");
                 }
                 catch (Exception ex)
                 {
                     errores++;
-                    ErrorCargaDocumento clasificado = CargaDocumentoErrores.Clasificar(etiqueta, ex);
+                    ErrorCargaDocumento clasificado = AgregarValorRechazado(
+                        CargaDocumentoErrores.Clasificar(etiqueta, ex),
+                        row,
+                        metadata.Columns);
                     erroresDetalle.Add(clasificado);
                     LogErrorDocumento(log, metaId, archivo, filePath, clasificado.Motivo, ex?.Message);
                 }
@@ -616,7 +622,7 @@ namespace SigmabotSync.Application.FileExtraction
         /// Envía el archivo y la metadata a Aconex mediante el API Register Document (multipart/mixed: XML + archivo base64).
         /// Ver: https://help.aconex.com/apis/api-guide-documents/#Register-Document
         /// </summary>
-        private async Task<string> EnviarDocumentoAconexAsync(
+        private async Task<(string DocumentId, string DocumentNumber)> EnviarDocumentoAconexAsync(
             string filePath,
             DataRow metadataRow,
             DataColumnCollection columnas,
@@ -669,7 +675,11 @@ namespace SigmabotSync.Application.FileExtraction
                     FormatAconexRegisterFailureMessage(raw.StatusCode, responseText));
             }
 
-            return ParseRegisterDocumentResponse(responseText);
+            string documentId = AconexRegisterResponseParser.ParseRegisterDocumentId(responseText);
+            if (string.IsNullOrWhiteSpace(documentId))
+                documentId = ParseRegisterDocumentResponse(responseText);
+            string documentNumber = AconexRegisterResponseParser.ParseRegisterDocumentNumber(responseText);
+            return (documentId, documentNumber);
         }
 
         private static string GetMetadataIdForLog(DataRow row, string columnaId)
@@ -1055,6 +1065,78 @@ namespace SigmabotSync.Application.FileExtraction
             return mapa;
         }
 
+        private static string TraducirProceso(string valor)
+        {
+            if (string.IsNullOrWhiteSpace(valor))
+                return valor;
+            string clave = valor.Trim();
+            if (string.Equals(clave, "Construcción/Adm Obra", StringComparison.OrdinalIgnoreCase))
+                return "Construccion";
+            if (string.Equals(clave, "Ingenieria", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(clave, "Ingeniería", StringComparison.OrdinalIgnoreCase))
+                return "Ingeniería";
+            return clave;
+        }
+
+        private ErrorCargaDocumento AgregarValorRechazado(
+            ErrorCargaDocumento error,
+            DataRow row,
+            DataColumnCollection columnas)
+        {
+            if (error == null || string.IsNullOrWhiteSpace(error.Motivo))
+                return error;
+
+            const string inicio = "el valor del campo ";
+            const string fin = " no es válido";
+            string motivo = error.Motivo.Trim();
+            if (!motivo.StartsWith(inicio, StringComparison.OrdinalIgnoreCase)
+                || !motivo.EndsWith(fin, StringComparison.OrdinalIgnoreCase)
+                || motivo.IndexOf('\'') >= 0)
+                return error;
+
+            string campo = motivo.Substring(inicio.Length, motivo.Length - inicio.Length - fin.Length).Trim();
+            string valor = ValorEnviadoDelCampo(campo, row, columnas);
+            if (string.IsNullOrWhiteSpace(valor))
+                return error;
+
+            return new ErrorCargaDocumento(
+                error.Archivo,
+                error.Categoria,
+                "el valor '" + valor.Trim() + "' del campo " + campo + " no es válido");
+        }
+
+        private string ValorEnviadoDelCampo(string campo, DataRow row, DataColumnCollection columnas)
+        {
+            if (string.Equals(campo, "Disciplina", StringComparison.OrdinalIgnoreCase))
+            {
+                string origen = GetValueFromRow(row, columnas, "Discipline", "discipline");
+                if (string.IsNullOrWhiteSpace(origen))
+                    return null;
+                if (_disciplinePorOrigen != null
+                    && _disciplinePorOrigen.TryGetValue(origen.Trim(), out List<string> destinos)
+                    && destinos != null
+                    && destinos.Count == 1)
+                    return destinos[0];
+                return origen;
+            }
+
+            if (string.Equals(campo, "Proceso", StringComparison.OrdinalIgnoreCase))
+                return TraducirProceso(GetValueFromRow(row, columnas, "Proceso"));
+            if (string.Equals(campo, "CWA", StringComparison.OrdinalIgnoreCase))
+                return GetValueFromRow(row, columnas, "CWA");
+            if (string.Equals(campo, "CWP", StringComparison.OrdinalIgnoreCase))
+                return GetValueFromRow(row, columnas, "CWP");
+            if (string.Equals(campo, "FWP", StringComparison.OrdinalIgnoreCase))
+                return GetValueFromRow(row, columnas, "FWP", "IWP");
+            if (string.Equals(campo, "Tipo de documento", StringComparison.OrdinalIgnoreCase))
+                return GetValueFromRow(row, columnas, "TipoDocumento");
+            if (string.Equals(campo, "Estatus BIM", StringComparison.OrdinalIgnoreCase))
+                return GetValueFromRow(row, columnas, "EstatusBim");
+            if (string.Equals(campo, "Estatus", StringComparison.OrdinalIgnoreCase))
+                return GetValueFromRow(row, columnas, "Status", "Estatus");
+            return null;
+        }
+
         private static string TraducirDiscipline(string valor, IReadOnlyDictionary<string, List<string>> mapa)
         {
             if (string.IsNullOrWhiteSpace(valor))
@@ -1083,6 +1165,8 @@ namespace SigmabotSync.Application.FileExtraction
                 string value = ResolveProjectSingleSelectValue(row, columnas, xmlSingleSelect);
                 if (string.Equals(xmlSingleSelect, "Discipline_singleSelect", StringComparison.OrdinalIgnoreCase))
                     value = TraducirDiscipline(value, _disciplinePorOrigen);
+                if (string.Equals(xmlSingleSelect, "Proceso_singleSelect", StringComparison.OrdinalIgnoreCase))
+                    value = TraducirProceso(value);
                 if (string.IsNullOrWhiteSpace(value)
                     && string.Equals(xmlSingleSelect, XmlNameEstatusBimSingleSelect, StringComparison.OrdinalIgnoreCase))
                     value = DefaultEstatusBimWhenEmpty;

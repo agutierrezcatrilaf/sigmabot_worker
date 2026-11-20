@@ -47,7 +47,7 @@ namespace SigmabotSync.Application.FileExtraction
 
     internal static class CargaDocumentoErrores
     {
-        private const int MaxArchivosPorGrupo = 30;
+        private const int MaxArchivosPorGrupo = int.MaxValue;
 
         public static ErrorCargaDocumento ArchivoNoEncontrado(string archivo, string ruta)
         {
@@ -99,11 +99,18 @@ namespace SigmabotSync.Application.FileExtraction
 
         public static string Etiqueta(string numeroDocumento, string id, string archivo)
         {
-            string archivoTxt = string.IsNullOrWhiteSpace(archivo) ? "sin archivo" : archivo.Trim();
+            return Etiqueta(null, numeroDocumento, id, archivo);
+        }
+
+        public static string Etiqueta(string titulo, string numeroDocumento, string id, string archivo)
+        {
+            if (!string.IsNullOrWhiteSpace(titulo))
+                return titulo.Trim();
             if (!string.IsNullOrWhiteSpace(numeroDocumento))
-                return "N° " + numeroDocumento.Trim() + " | " + archivoTxt;
-            string idTxt = string.IsNullOrWhiteSpace(id) ? "sin id" : id.Trim();
-            return "Id " + idTxt + " | " + archivoTxt;
+                return "N° " + numeroDocumento.Trim();
+            if (!string.IsNullOrWhiteSpace(id))
+                return "Id " + id.Trim();
+            return string.IsNullOrWhiteSpace(archivo) ? "sin nombre" : archivo.Trim();
         }
 
         public static CargaDocumentoException DesdeRespuestaHttp(int statusCode, string responseText)
@@ -129,6 +136,14 @@ namespace SigmabotSync.Application.FileExtraction
                 return new CargaDocumentoException(
                     CategoriaErrorCarga.DatosRechazados,
                     invalido,
+                    responseText);
+            }
+
+            if (TryCampoInexistente(responseText, out string inexistente))
+            {
+                return new CargaDocumentoException(
+                    CategoriaErrorCarga.DatosRechazados,
+                    "el campo " + inexistente + " no existe en Aconex para este tipo de documento",
                     responseText);
             }
 
@@ -273,7 +288,7 @@ namespace SigmabotSync.Application.FileExtraction
                 case CategoriaErrorCarga.ErrorAlLeerArchivo:
                     return "Archivos que no se pudieron leer";
                 case CategoriaErrorCarga.DatosRechazados:
-                    return "Datos rechazados por Aconex";
+                    return "No se pudieron crear";
                 case CategoriaErrorCarga.DocumentoYaExiste:
                     return "Documentos que ya existen en Aconex";
                 case CategoriaErrorCarga.AconexNoDisponible:
@@ -381,6 +396,23 @@ namespace SigmabotSync.Application.FileExtraction
             return true;
         }
 
+        private static bool TryCampoInexistente(string text, out string campo)
+        {
+            campo = null;
+            const string marker = "Field identifier ";
+            int idx = text?.IndexOf(marker, StringComparison.OrdinalIgnoreCase) ?? -1;
+            if (idx < 0 || !Contiene(text, "is invalid"))
+                return false;
+
+            int start = idx + marker.Length;
+            int end = start;
+            while (end < text.Length && text[end] != ' ' && text[end] != '<' && text[end] != '.')
+                end++;
+
+            campo = LimpiarCampo(text.Substring(start, end - start));
+            return !string.IsNullOrWhiteSpace(campo);
+        }
+
         private static string LimpiarCampo(string field)
         {
             if (string.IsNullOrWhiteSpace(field))
@@ -389,7 +421,31 @@ namespace SigmabotSync.Application.FileExtraction
             string limpio = field.Trim();
             if (limpio.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 limpio = limpio.Substring(0, limpio.Length - suffix.Length);
-            return limpio.Trim();
+            const string texto = "_singleLineText";
+            if (limpio.EndsWith(texto, StringComparison.OrdinalIgnoreCase))
+                limpio = limpio.Substring(0, limpio.Length - texto.Length);
+            return NombreCampo(limpio.Trim());
+        }
+
+        private static string NombreCampo(string campo)
+        {
+            switch (campo.ToUpperInvariant())
+            {
+                case "CWA": return "CWA";
+                case "CWP": return "CWP";
+                case "FWP": return "FWP";
+                case "EWP": return "EWP";
+                case "PWP": return "PWP";
+                case "CMA": return "CMA";
+                case "REVISIONDATE": return "Fecha de revisión";
+                case "DISCIPLINE": return "Disciplina";
+                case "TIPODEDOCUMENTO": return "Tipo de documento";
+                case "ESTATUSBIM": return "Estatus BIM";
+                case "DOCUMENTSTATUSID": return "Estatus";
+                case "PROCESO": return "Proceso";
+                case "ORIGEN": return "Origen";
+                default: return campo;
+            }
         }
 
         private static bool IndicaAccesoRechazado(string text)

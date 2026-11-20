@@ -37,5 +37,21 @@ INSERT INTO dbo.DocumentosHomologacion (Campo, ValorOrigen, ValorDestino) VALUES
 (N'Discipline', N'MECÁNICA', N'Mecanica'),
 (N'Discipline', N'PINTURA', N'Mecanica'),
 (N'Discipline', N'SSOMA', N'SSOMA'),
-(N'Discipline', N'EEMM', N'Equipos');
+(N'Discipline', N'EEMM', N'Equipos'),
+(N'Discipline', N'OBRA GRUESA', N'Civil'),
+(N'Discipline', N'PREFABRICADOS', N'Civil'),
+(N'Discipline', N'CALDERIA', N'Mecanica'),
+(N'Discipline', N'Sin disciplina', N'General'),
+(N'Discipline', N'PIPING', N'Piping'),
+(N'Discipline', N'OOCC', N'Civil'),
+(N'Discipline', N'TOPOGRAFÍA', N'Multidisciplina'),
+(N'Discipline', N'SOLDADURA', N'Soldadura'),
+(N'Discipline', N'ESTRUCTURA', N'Estructuras'),
+(N'Discipline', N'MOVIMIENTO DE TIERRA', N'Movimiento de Tierra'),
+(N'Discipline', N'ARQUITECTURA', N'Arquitectura'),
+(N'Discipline', N'CLIMATIZACIÓN', N'HVAC'),
+(N'Discipline', N'MINERÍA', N'Mineria'),
+(N'Discipline', N'TERMINACIONES', N'Calidad'),
+(N'Discipline', N'INSTALACIONES', N'Calidad'),
+(N'Discipline', N'AUTOMATIZACIÓN', N'Instrumentacion y Control');
 GO
